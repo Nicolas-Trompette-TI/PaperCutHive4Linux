@@ -1,0 +1,8 @@
+.secrets/
+outputs/
+tools/
+*.log
+
+# Python build/runtime cache
+__pycache__/
+*.py[cod]

@@ -1,46 +1,55 @@
 # PaperCut Hive Driver for Ubuntu
 
-Lightweight production deployment for Ubuntu users who need to print to PaperCut Hive from standard Linux applications.
+Install once, then print from normal Linux apps to PaperCut Hive.
 
-## One-command setup
+## For End Users
+
+### 1) Clone and run setup
+
+```bash
+git clone https://github.com/Nicolas-Trompette-TI/PaperCutHive4Linux.git
+cd PaperCutHive4Linux
+./setup.sh
+```
+
+- `setup.sh` asks for your `Org ID` if missing.
+- You can still run non-interactive mode:
 
 ```bash
 ./setup.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
 ```
 
-What setup installs:
-1. CUPS queue (`PaperCut-Hive-Lite`) for normal Linux printing
-2. Secure token storage in OS keyring (Secret Service)
-3. Automatic token sync after login/reboot (systemd --user timer)
-4. Local print verification
+### 2) Print from GUI apps
+After setup, in any graphical app:
+1. `Ctrl+P`
+2. Select printer `PaperCut-Hive-Lite`
+3. Print
 
-If setup is launched from a non-graphical shell, run finalization from your desktop session:
+### 3) Done
+Your Linux workstation keeps the configuration and token sync across reboot/login.
+
+## Direct Answer To Your Question
+Yes: for a Linux user, the expected flow is exactly:
+1. Clone repo
+2. Run install (`./setup.sh`)
+3. Use `PaperCut-Hive-Lite` in GUI print dialog
+
+The only requirement is having a valid PaperCut user session/token during setup (handled by the setup/finalize flow).
+
+## If Finalization Is Required
+If setup was launched outside a graphical desktop session, run:
 
 ```bash
 ./release/finalize-session.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
 ```
 
-## Print a document
+## Verify Quickly
 
 ```bash
-echo test > ~/test.txt
-lp -d 'PaperCut-Hive-Lite' ~/test.txt
-```
-
-## Security
-- User JWT is stored in OS keyring (not in repository files)
-- Runtime token files are restricted to `root:lp` (`640`)
-- Privileged token writes are limited to a dedicated helper command
-
-## Useful commands
-
-```bash
-./release/install.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
-./release/finalize-session.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
 ./release/verify-print.sh --printer-name PaperCut-Hive-Lite
 ```
 
-## Supported scope
-- Ubuntu-focused deployment
-- System printing through CUPS
-- Secure release behavior governed by your PaperCut Hive tenant policy
+## Security
+- User JWT stored in OS keyring (Secret Service)
+- Runtime token files restricted to `root:lp` (`640`)
+- Privileged token writes restricted to a dedicated helper command

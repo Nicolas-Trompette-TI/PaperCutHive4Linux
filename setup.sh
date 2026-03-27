@@ -11,10 +11,11 @@ PROFILE_DIR=""
 NO_BOOTSTRAP=0
 SKIP_VERIFY=0
 DRY_RUN=0
+AUTO_YES=0
 
 usage() {
   cat <<EOF
-Usage: $0 --org-id <ORG_ID> [options]
+Usage: $0 [--org-id <ORG_ID>] [options]
 
 PaperCut Hive Driver for Ubuntu setup (single entrypoint):
 1) Installs production runtime (CUPS backend + secure token sync stack)
@@ -22,13 +23,14 @@ PaperCut Hive Driver for Ubuntu setup (single entrypoint):
 3) Runs a local print verification
 
 Options:
-  --org-id <ORG_ID>             required
+  --org-id <ORG_ID>             optional in interactive shell (prompted)
   --cloud-host <host>           default: eu.hive.papercut.com
   --linux-user <user>           default: current user
   --printer-name <name>         default: PaperCut-Hive-Lite
   --profile-dir <dir>           browser profile dir (extension bootstrap)
   --no-bootstrap-from-extension skip extension -> keyring bootstrap
   --skip-verify                 do not run release/verify-print.sh
+  -y, --yes                     accept interactive prompts
   --dry-run                     print actions without applying
   -h, --help                    show help
 EOF
@@ -43,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --profile-dir) PROFILE_DIR="${2:-}"; shift 2 ;;
     --no-bootstrap-from-extension) NO_BOOTSTRAP=1; shift ;;
     --skip-verify) SKIP_VERIFY=1; shift ;;
+    -y|--yes) AUTO_YES=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
@@ -50,9 +53,27 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$ORG_ID" ]]; then
-  echo "--org-id is required." >&2
+  if [[ -t 0 && -t 1 ]]; then
+    read -r -p "PaperCut Org ID: " ORG_ID
+  fi
+fi
+if [[ -z "$ORG_ID" ]]; then
+  echo "--org-id is required (or provide it interactively)." >&2
   usage
   exit 1
+fi
+
+if [[ $AUTO_YES -ne 1 && -t 0 && -t 1 && $DRY_RUN -eq 0 ]]; then
+  echo "About to install PaperCut Hive Driver for Ubuntu with:"
+  echo "  org-id:      $ORG_ID"
+  echo "  cloud-host:  $CLOUD_HOST"
+  echo "  linux-user:  $LINUX_USER"
+  echo "  printer:     $PRINTER_NAME"
+  read -r -p "Continue? [y/N] " ans
+  case "$ans" in
+    y|Y|yes|YES) ;;
+    *) echo "Cancelled."; exit 1 ;;
+  esac
 fi
 
 install_cmd=(
@@ -125,3 +146,8 @@ fi
 
 echo
 echo "Setup complete: PaperCut Hive Driver for Ubuntu is installed and validated."
+echo
+echo "User flow:"
+echo "1) Open any app (LibreOffice, browser, PDF viewer, etc.)"
+echo "2) Choose printer: $PRINTER_NAME"
+echo "3) Print"

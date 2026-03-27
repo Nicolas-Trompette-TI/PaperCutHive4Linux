@@ -2,15 +2,15 @@
 set -euo pipefail
 
 PRINTER_NAME="PaperCut-Hive-Lite"
-TEST_FILE="${HOME}/papercut-hive-selftest.txt"
+TEST_FILE="${HOME}/papercut-hive-verify.txt"
 
 usage() {
   cat <<EOF
 Usage: $0 [--printer-name <name>]
 
-Runs a lightweight post-install self-test:
+Runs a lightweight post-install verification:
 1) validates queue presence
-2) prints a test file
+2) prints a verification file
 3) checks completed jobs contains latest request
 EOF
 }
@@ -28,7 +28,7 @@ if ! lpstat -p "$PRINTER_NAME" >/dev/null 2>&1; then
   exit 1
 fi
 
-printf 'papercut hive self-test %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$TEST_FILE"
+printf 'papercut hive verify %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$TEST_FILE"
 REQ_LINE="$(lp -d "$PRINTER_NAME" "$TEST_FILE")"
 JOB_ID="$(echo "$REQ_LINE" | sed -n 's/^request id is \([^ ]*\).*/\1/p')"
 
@@ -43,4 +43,4 @@ if ! lpstat -W completed -o "$PRINTER_NAME" | grep -q "^${JOB_ID}[[:space:]]"; t
   exit 1
 fi
 
-echo "Self-test OK: $JOB_ID"
+echo "Verification OK: $JOB_ID"

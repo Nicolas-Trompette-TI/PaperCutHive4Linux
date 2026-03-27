@@ -26,7 +26,7 @@ Optional:
   --enable-backend-dry-run      install backend with PAPERCUT_DRY_RUN=1
 
 What it installs:
-- /usr/local/lib/papercut-hive-lite/papercut_submit_job_poc.py
+- /usr/local/lib/papercut-hive-lite/papercut_submit_job.py
 - /usr/local/lib/papercut-hive-lite/papercut_cups_backend.sh
 - /usr/lib/cups/backend/papercut-hive-lite
 - /etc/papercut-hive-lite/config.env
@@ -83,9 +83,9 @@ run "sudo apt-get install -y cups cups-client cups-filters python3-requests file
 
 echo "[2/6] install backend runtime files"
 run "sudo mkdir -p /usr/local/lib/papercut-hive-lite"
-run "sudo cp '$BASE/scripts/papercut_submit_job_poc.py' /usr/local/lib/papercut-hive-lite/papercut_submit_job_poc.py"
+run "sudo cp '$BASE/scripts/papercut_submit_job.py' /usr/local/lib/papercut-hive-lite/papercut_submit_job.py"
 run "sudo cp '$BASE/scripts/papercut_cups_backend.sh' /usr/local/lib/papercut-hive-lite/papercut_cups_backend.sh"
-run "sudo chmod 755 /usr/local/lib/papercut-hive-lite/papercut_submit_job_poc.py /usr/local/lib/papercut-hive-lite/papercut_cups_backend.sh"
+run "sudo chmod 755 /usr/local/lib/papercut-hive-lite/papercut_submit_job.py /usr/local/lib/papercut-hive-lite/papercut_cups_backend.sh"
 run "sudo mkdir -p /var/lib/papercut-hive-lite"
 run "sudo chown root:lp /var/lib/papercut-hive-lite"
 run "sudo chmod 775 /var/lib/papercut-hive-lite"
@@ -123,6 +123,6 @@ echo "Queue created: $PRINTER_NAME"
 echo "Token setup (required):"
 echo "  ./scripts/set_hive_user_token.sh --linux-user <user>"
 echo
-echo "Test print:"
+echo "Quick verification print:"
 echo "  echo test > ~/test.txt"
 echo "  lp -d '$PRINTER_NAME' ~/test.txt"

@@ -7,7 +7,7 @@ set -euo pipefail
 
 BACKEND_NAME="papercut-hive-lite"
 LIB_DIR="/usr/local/lib/papercut-hive-lite"
-SUBMIT_PY="$LIB_DIR/papercut_submit_job_poc.py"
+SUBMIT_PY="$LIB_DIR/papercut_submit_job.py"
 CFG_FILE="/etc/papercut-hive-lite/config.env"
 TOKENS_DIR="/etc/papercut-hive-lite/tokens"
 

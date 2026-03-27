@@ -1,20 +1,31 @@
 # Release Commands
 
-## 1) Install (system side)
+For most users, run the root command:
+
 ```bash
-./release/install.sh --org-id 10196b04 --cloud-host eu.hive.papercut.com --linux-user "$USER"
+./setup.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
 ```
 
-## 2) Finalize in user desktop session (keyring + timer)
+If you need step-by-step control:
+
+## 1) Install runtime stack
+
 ```bash
-./release/finalize-session.sh --org-id 10196b04 --cloud-host eu.hive.papercut.com --linux-user "$USER"
+./release/install.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
 ```
 
-## 3) Self-test
+## 2) Finalize desktop keyring/session
+
 ```bash
-./release/self-test.sh --printer-name PaperCut-Hive-Lite
+./release/finalize-session.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
+```
+
+## 3) Verify printing path
+
+```bash
+./release/verify-print.sh --printer-name PaperCut-Hive-Lite
 ```
 
 ## Notes
-- `finalize-session.sh` should be launched from the user graphical session so Secret Service is available.
-- `self-test.sh` validates Linux-side CUPS completion only; verify secure release metadata in Hive admin logs.
+- Run `finalize-session.sh` inside a normal graphical desktop session.
+- `verify-print.sh` checks Linux-side queue completion; confirm release behavior in Hive admin logs if required by policy.

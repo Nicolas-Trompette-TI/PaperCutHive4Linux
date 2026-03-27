@@ -220,7 +220,7 @@ def submit_print(
 
 
 def main():
-    ap = argparse.ArgumentParser(description="POC: submit a print job to PaperCut endpoints using extension-like protocol")
+    ap = argparse.ArgumentParser(description="Submit a print job to PaperCut endpoints using extension-compatible protocol")
     ap.add_argument("--cloud-host", default="eu.hive.papercut.com", help="Example: eu.hive.papercut.com")
     ap.add_argument("--org-id", default="", help="PaperCut org ID. Optional if claim endpoint returns one")
     ap.add_argument("--user-jwt", default="", help="User JWT token (already claimed). If absent, --id-token is used")

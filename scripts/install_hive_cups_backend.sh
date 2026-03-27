@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BASE="$(cd "$(dirname "$0")/.." && pwd)"
-PRINTER_NAME="PaperCut-Hive-Lite"
+PRINTER_NAME="PaperCut-Hive-TIF"
 CLOUD_HOST="eu.hive.papercut.com"
 ORG_ID=""
 CLIENT_TYPE="ChromeApp-2.4.1"
@@ -19,7 +19,7 @@ Required:
 
 Optional:
   --cloud-host <host>           default: eu.hive.papercut.com
-  --printer-name <name>         default: PaperCut-Hive-Lite
+  --printer-name <name>         default: PaperCut-Hive-TIF
   --client-type <value>         default: ChromeApp-2.4.1
   --timeout <sec>               default: 60
   --dry-run                     print actions without applying

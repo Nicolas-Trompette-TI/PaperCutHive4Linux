@@ -22,7 +22,7 @@ cd PaperCutHive4Linux
 ### 2) Print from GUI apps
 After setup, in any graphical app:
 1. `Ctrl+P`
-2. Select printer `PaperCut-Hive-Lite`
+2. Select printer `PaperCut-Hive-TIF`
 3. Print
 
 ### 3) Done
@@ -32,7 +32,7 @@ Your Linux workstation keeps the configuration and token sync across reboot/logi
 Yes: for a Linux user, the expected flow is exactly:
 1. Clone repo
 2. Run install (`./setup.sh`)
-3. Use `PaperCut-Hive-Lite` in GUI print dialog
+3. Use `PaperCut-Hive-TIF` in GUI print dialog
 
 The only requirement is having a valid PaperCut user session/token during setup (handled by the setup/finalize flow).
 
@@ -46,7 +46,7 @@ If setup was launched outside a graphical desktop session, run:
 ## Verify Quickly
 
 ```bash
-./release/verify-print.sh --printer-name PaperCut-Hive-Lite
+./release/verify-print.sh --printer-name PaperCut-Hive-TIF
 ```
 
 ## Security

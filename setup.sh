@@ -6,7 +6,7 @@ BASE="$(cd "$(dirname "$0")" && pwd)"
 ORG_ID=""
 CLOUD_HOST="eu.hive.papercut.com"
 LINUX_USER="${USER}"
-PRINTER_NAME="PaperCut-Hive-Lite"
+PRINTER_NAME="PaperCut-Hive-TIF"
 PROFILE_DIR=""
 NO_BOOTSTRAP=0
 SKIP_VERIFY=0
@@ -26,7 +26,7 @@ Options:
   --org-id <ORG_ID>             optional in interactive shell (prompted)
   --cloud-host <host>           default: eu.hive.papercut.com
   --linux-user <user>           default: current user
-  --printer-name <name>         default: PaperCut-Hive-Lite
+  --printer-name <name>         default: PaperCut-Hive-TIF
   --profile-dir <dir>           browser profile dir (extension bootstrap)
   --no-bootstrap-from-extension skip extension -> keyring bootstrap
   --skip-verify                 do not run release/verify-print.sh

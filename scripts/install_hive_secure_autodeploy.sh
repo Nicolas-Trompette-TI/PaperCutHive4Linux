@@ -6,7 +6,7 @@ BASE="$(cd "$(dirname "$0")/.." && pwd)"
 LINUX_USER="${USER}"
 ORG_ID=""
 CLOUD_HOST="eu.hive.papercut.com"
-PRINTER_NAME="PaperCut-Hive-Lite"
+PRINTER_NAME="PaperCut-Hive-TIF"
 ENABLE_BACKEND_DRY_RUN=0
 BOOTSTRAP_FROM_EXTENSION=0
 PROFILE_DIR=""
@@ -27,7 +27,7 @@ Options:
   --org-id <ORG_ID>             required
   --cloud-host <host>           default: eu.hive.papercut.com
   --linux-user <user>           default: current user
-  --printer-name <name>         default: PaperCut-Hive-Lite
+  --printer-name <name>         default: PaperCut-Hive-TIF
   --enable-backend-dry-run      set backend to offline dry-run mode
   --bootstrap-from-extension    extract JWT from extension and store in keyring
   --profile-dir <dir>           browser profile dir for bootstrap extraction

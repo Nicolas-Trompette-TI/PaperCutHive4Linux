@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PRINTER_NAME="PaperCut-Hive-Lite"
+PRINTER_NAME="PaperCut-Hive-TIF"
 TEST_FILE="${HOME}/papercut-hive-verify.txt"
 
 usage() {

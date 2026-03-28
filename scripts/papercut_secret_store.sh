@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 BASE="$(cd "$(dirname "$0")/.." && pwd)"
 EXT_ID="pdlopiakikhioinbeibaachakgdgllff"

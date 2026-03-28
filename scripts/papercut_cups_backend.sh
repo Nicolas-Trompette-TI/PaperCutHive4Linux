@@ -9,6 +9,7 @@ BACKEND_NAME="papercut-hive-lite"
 LIB_DIR="/usr/local/lib/papercut-hive-lite"
 SUBMIT_PY="$LIB_DIR/papercut_submit_job.py"
 CFG_FILE="/etc/papercut-hive-lite/config.env"
+PY_ENV_FILE="/etc/papercut-hive-lite/python.env"
 TOKENS_DIR="/etc/papercut-hive-lite/tokens"
 
 if [[ $# -le 1 ]]; then
@@ -23,17 +24,51 @@ COPIES="${4:-1}"
 OPTIONS="${5:-}"
 INPUT_FILE="${6:-}"
 
+record_alert() {
+  local code="$1"
+  [[ "${PAPERCUT_NOTIFY_ERRORS:-1}" == "1" ]] || return 0
+
+  local ts safe_user safe_job safe_code queue alert_dir alert_file
+  ts="$(date -u +%Y%m%dT%H%M%SZ)"
+  safe_user="$(printf '%s' "$CUPS_USER" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
+  safe_job="$(printf '%s' "${JOB_ID:-unknown}" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
+  safe_code="$(printf '%s' "$code" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
+  queue="${PAPERCUT_QUEUE_NAME:-PaperCut-Hive-TIF}"
+  alert_dir="${PAPERCUT_ALERT_DIR:-/var/lib/papercut-hive-lite/alerts}"
+
+  [[ -n "$safe_user" ]] || safe_user="unknown"
+  [[ -n "$safe_job" ]] || safe_job="unknown"
+  [[ -n "$safe_code" ]] || safe_code="submit-failed"
+
+  mkdir -p "$alert_dir" >/dev/null 2>&1 || return 0
+  alert_file="$alert_dir/${safe_user}-${ts}-${safe_job}-${safe_code}.alert"
+  {
+    echo "timestamp=$ts"
+    echo "user=$safe_user"
+    echo "queue=$queue"
+    echo "job_id=$safe_job"
+    echo "code=$safe_code"
+  } >"$alert_file" 2>/dev/null || true
+  chmod 644 "$alert_file" 2>/dev/null || true
+}
+
 if [[ ! -f "$CFG_FILE" ]]; then
   echo "[$BACKEND_NAME] missing config: $CFG_FILE" >&2
+  record_alert "missing-config"
   exit 1
 fi
 if [[ ! -r "$CFG_FILE" ]]; then
   echo "[$BACKEND_NAME] config is not readable by backend user: $CFG_FILE" >&2
+  record_alert "unreadable-config"
   exit 1
 fi
 
 # shellcheck disable=SC1090
 source "$CFG_FILE"
+if [[ -r "$PY_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$PY_ENV_FILE"
+fi
 
 : "${PAPERCUT_CLOUD_HOST:=eu.hive.papercut.com}"
 : "${PAPERCUT_ORG_ID:=}"
@@ -44,6 +79,10 @@ source "$CFG_FILE"
 : "${PAPERCUT_ID_TOKEN:=}"
 : "${PAPERCUT_USER_JWT:=}"
 : "${PAPERCUT_STATE_DIR:=/var/lib/papercut-hive-lite}"
+: "${PAPERCUT_ALERT_DIR:=/var/lib/papercut-hive-lite/alerts}"
+: "${PAPERCUT_NOTIFY_ERRORS:=1}"
+: "${PAPERCUT_QUEUE_NAME:=PaperCut-Hive-TIF}"
+: "${PAPERCUT_PYTHON_BIN:=}"
 
 if [[ -f "$TOKENS_DIR/$CUPS_USER.jwt" ]]; then
   if [[ ! -r "$TOKENS_DIR/$CUPS_USER.jwt" ]]; then
@@ -89,6 +128,7 @@ if [[ "$mime" != "application/pdf" ]]; then
     FILE_FORMAT="application/pdf"
   else
     echo "[$BACKEND_NAME] non-PDF input ($mime) and cupsfilter is unavailable" >&2
+    record_alert "cupsfilter-missing"
     exit 1
   fi
 fi
@@ -135,7 +175,8 @@ case "${media^^}" in
 esac
 
 cmd=(
-  python3 "$SUBMIT_PY"
+  ""
+  "$SUBMIT_PY"
   --cloud-host "$PAPERCUT_CLOUD_HOST"
   --org-id "$PAPERCUT_ORG_ID"
   --file "$SEND_FILE"
@@ -149,6 +190,35 @@ cmd=(
   --client-type "$PAPERCUT_CLIENT_TYPE"
   --timeout "$PAPERCUT_TIMEOUT"
 )
+
+pick_python() {
+  local py
+  local candidates=()
+  if [[ -n "${PAPERCUT_PYTHON_BIN:-}" ]]; then
+    candidates+=("$PAPERCUT_PYTHON_BIN")
+  fi
+  candidates+=("/usr/bin/python3" "$LIB_DIR/.venv/bin/python3")
+
+  for py in "${candidates[@]}"; do
+    [[ -x "$py" ]] || continue
+    if "$py" - <<'PY' >/dev/null 2>&1
+import requests
+print(requests.__version__)
+PY
+    then
+      printf '%s\n' "$py"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ! runtime_python="$(pick_python)"; then
+  echo "[$BACKEND_NAME] no valid Python runtime found (requests unavailable)." >&2
+  record_alert "python-runtime"
+  exit 1
+fi
+cmd[0]="$runtime_python"
 
 if [[ -n "$PAPERCUT_TARGET_URL" ]]; then
   cmd+=(--target-url "$PAPERCUT_TARGET_URL")
@@ -164,6 +234,7 @@ elif [[ -n "$PAPERCUT_ID_TOKEN" ]]; then
   cmd+=(--id-token "$PAPERCUT_ID_TOKEN")
 else
   echo "[$BACKEND_NAME] missing token for user '$CUPS_USER' (no jwt/id-token configured)" >&2
+  record_alert "missing-token"
   exit 1
 fi
 
@@ -171,6 +242,7 @@ fi
 export PAPERCUT_STATE_DIR
 if ! "${cmd[@]}" 1>&2; then
   echo "[$BACKEND_NAME] submit failed for job=$JOB_ID user=$CUPS_USER title=$TITLE" >&2
+  record_alert "submit-failed"
   exit 1
 fi
 

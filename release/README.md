@@ -12,6 +12,10 @@
 ./setup.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
 ```
 
+Useful flags:
+- `--python-mode auto|apt-only` (default: `auto`)
+- `--no-notify` to disable desktop popups
+
 ## Manual Step-by-Step (advanced)
 
 ```bash

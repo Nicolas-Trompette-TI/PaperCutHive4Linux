@@ -13,6 +13,7 @@ cd PaperCutHive4Linux
 ```
 
 - `setup.sh` asks for your `Org ID` if missing.
+- Desktop notifications are enabled by default for setup issues and print-send failures.
 - You can still run non-interactive mode:
 
 ```bash
@@ -48,6 +49,12 @@ If setup was launched outside a graphical desktop session, run:
 ```bash
 ./release/verify-print.sh --printer-name PaperCut-Hive-TIF
 ```
+
+## Runtime Stability
+- Default Python mode is `auto`: system `python3` + `python3-requests` first.
+- If system runtime is broken, installer can auto-fallback to a local driver venv.
+- To force strict system mode: `--python-mode apt-only`.
+- To disable desktop notifications: `--no-notify`.
 
 ## Security
 - User JWT stored in OS keyring (Secret Service)

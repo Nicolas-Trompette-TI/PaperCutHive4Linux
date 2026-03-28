@@ -7,6 +7,7 @@ ORG_ID=""
 CLOUD_HOST="eu.hive.papercut.com"
 LINUX_USER="${USER}"
 PROFILE_DIR=""
+ENABLE_NOTIFY=1
 
 usage() {
   cat <<EOF
@@ -21,6 +22,7 @@ Options:
   --cloud-host <host>       default: eu.hive.papercut.com
   --linux-user <user>       default: current user
   --profile-dir <dir>       browser profile dir for extension token extraction
+  --no-notify               disable desktop notifications
   -h, --help                show help
 EOF
 }
@@ -31,6 +33,7 @@ while [[ $# -gt 0 ]]; do
     --cloud-host) CLOUD_HOST="${2:-}"; shift 2 ;;
     --linux-user) LINUX_USER="${2:-}"; shift 2 ;;
     --profile-dir) PROFILE_DIR="${2:-}"; shift 2 ;;
+    --no-notify) ENABLE_NOTIFY=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
   esac
@@ -47,8 +50,23 @@ if [[ "$LINUX_USER" != "$USER" ]]; then
   exit 1
 fi
 
+notify_user() {
+  local level="$1"
+  local message="$2"
+  [[ $ENABLE_NOTIFY -eq 1 ]] || return 0
+  "$BASE/scripts/papercut_notify.sh" --level "$level" --title "PaperCut Hive Driver" --message "$message" || true
+}
+
+on_error() {
+  notify_user error "Finalize failed. Check terminal logs."
+}
+trap on_error ERR
+
 systemctl --user daemon-reload
 systemctl --user enable --now papercut-hive-token-sync.timer
+if [[ $ENABLE_NOTIFY -eq 1 ]]; then
+  systemctl --user enable --now papercut-hive-alert-notify.timer || true
+fi
 systemctl --user reset-failed papercut-hive-token-sync.service || true
 
 store_cmd=(
@@ -66,3 +84,4 @@ fi
 systemctl --user start papercut-hive-token-sync.service
 
 echo "Finalize session complete."
+notify_user info "Finalize complete. Secure token sync is active."

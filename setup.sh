@@ -12,6 +12,8 @@ NO_BOOTSTRAP=0
 SKIP_VERIFY=0
 DRY_RUN=0
 AUTO_YES=0
+ENABLE_NOTIFY=1
+PYTHON_MODE="auto"
 
 usage() {
   cat <<EOF
@@ -30,6 +32,8 @@ Options:
   --profile-dir <dir>           browser profile dir (extension bootstrap)
   --no-bootstrap-from-extension skip extension -> keyring bootstrap
   --skip-verify                 do not run release/verify-print.sh
+  --python-mode <auto|apt-only> default: auto
+  --no-notify                   disable desktop notifications
   -y, --yes                     accept interactive prompts
   --dry-run                     print actions without applying
   -h, --help                    show help
@@ -45,6 +49,8 @@ while [[ $# -gt 0 ]]; do
     --profile-dir) PROFILE_DIR="${2:-}"; shift 2 ;;
     --no-bootstrap-from-extension) NO_BOOTSTRAP=1; shift ;;
     --skip-verify) SKIP_VERIFY=1; shift ;;
+    --python-mode) PYTHON_MODE="${2:-}"; shift 2 ;;
+    --no-notify) ENABLE_NOTIFY=0; shift ;;
     -y|--yes) AUTO_YES=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -63,6 +69,32 @@ if [[ -z "$ORG_ID" ]]; then
   exit 1
 fi
 
+if [[ "$PYTHON_MODE" != "auto" && "$PYTHON_MODE" != "apt-only" ]]; then
+  echo "Invalid --python-mode: $PYTHON_MODE" >&2
+  exit 1
+fi
+
+notify_user() {
+  local level="$1"
+  local message="$2"
+  [[ $ENABLE_NOTIFY -eq 1 ]] || return 0
+  local notify_cmd=(
+    "$BASE/scripts/papercut_notify.sh"
+    --level "$level"
+    --title "PaperCut Hive Driver"
+    --message "$message"
+  )
+  if [[ $DRY_RUN -eq 1 ]]; then
+    notify_cmd+=(--dry-run)
+  fi
+  "${notify_cmd[@]}" || true
+}
+
+on_error() {
+  notify_user error "Setup failed. Check terminal logs for details."
+}
+trap on_error ERR
+
 if [[ $AUTO_YES -ne 1 && -t 0 && -t 1 && $DRY_RUN -eq 0 ]]; then
   echo "About to install PaperCut Hive Driver for Ubuntu with:"
   echo "  org-id:      $ORG_ID"
@@ -72,7 +104,7 @@ if [[ $AUTO_YES -ne 1 && -t 0 && -t 1 && $DRY_RUN -eq 0 ]]; then
   read -r -p "Continue? [y/N] " ans
   case "$ans" in
     y|Y|yes|YES) ;;
-    *) echo "Cancelled."; exit 1 ;;
+    *) echo "Cancelled."; notify_user warning "Setup cancelled by user."; exit 1 ;;
   esac
 fi
 
@@ -85,6 +117,10 @@ install_cmd=(
 )
 if [[ $NO_BOOTSTRAP -eq 1 ]]; then
   install_cmd+=(--no-bootstrap-from-extension)
+fi
+install_cmd+=(--python-mode "$PYTHON_MODE")
+if [[ $ENABLE_NOTIFY -eq 0 ]]; then
+  install_cmd+=(--no-notify)
 fi
 if [[ -n "$PROFILE_DIR" ]]; then
   install_cmd+=(--profile-dir "$PROFILE_DIR")
@@ -102,6 +138,9 @@ finalize_cmd=(
   --cloud-host "$CLOUD_HOST"
   --linux-user "$LINUX_USER"
 )
+if [[ $ENABLE_NOTIFY -eq 0 ]]; then
+  finalize_cmd+=(--no-notify)
+fi
 if [[ -n "$PROFILE_DIR" ]]; then
   finalize_cmd+=(--profile-dir "$PROFILE_DIR")
 fi
@@ -141,11 +180,13 @@ if [[ $needs_manual_finalize -eq 1 ]]; then
   echo "Run this command from the normal graphical session of user '$LINUX_USER':"
   printf '  %q ' "${finalize_cmd[@]}"
   echo
+  notify_user warning "Setup finished but desktop session finalization is still required."
   exit 2
 fi
 
 echo
 echo "Setup complete: PaperCut Hive Driver for Ubuntu is installed and validated."
+notify_user info "Setup complete. Printer ready: $PRINTER_NAME"
 echo
 echo "User flow:"
 echo "1) Open any app (LibreOffice, browser, PDF viewer, etc.)"

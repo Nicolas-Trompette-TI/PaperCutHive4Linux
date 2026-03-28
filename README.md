@@ -13,11 +13,19 @@ cd PaperCutHive4Linux
 ```
 
 - `setup.sh` asks for your `Org ID` if missing.
+- `setup.sh` now runs a mandatory `doctor` preflight before install.
 - Desktop notifications are enabled by default for setup issues and print-send failures.
 - You can still run non-interactive mode:
 
 ```bash
 ./setup.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
+```
+
+Useful operations:
+
+```bash
+./setup.sh --doctor --org-id <ORG_ID>
+./setup.sh --repair --org-id <ORG_ID>
 ```
 
 ### 2) Print from GUI apps
@@ -57,6 +65,30 @@ If setup was launched outside a graphical desktop session, run:
 - If token is still invalid during print, a desktop popup asks the user to reconnect the extension.
 - To force strict system mode: `--python-mode apt-only`.
 - To disable desktop notifications: `--no-notify`.
+
+## Health, Repair, and Logs
+- `--doctor` returns standardized exit codes:
+  - `0` OK
+  - `2` warnings
+  - `20` missing package install refused
+  - `21` missing package install failed
+  - `22` critical state not valid
+- `--repair` runs the same preflight, then repairs backend, queue, timers, and token sync path.
+- Lightweight structured logs are stored in:
+  - `~/.local/state/papercut-hive-lite/events.jsonl`
+
+## Debian Package
+Build a production `.deb`:
+
+```bash
+./packaging/build_deb.sh --version 1.0.0
+sudo apt install ./dist/papercut-hive-driver_1.0.0_$(dpkg --print-architecture).deb
+```
+
+CLI wrappers installed by package:
+- `papercut-hive-setup`
+- `papercut-hive-doctor`
+- `papercut-hive-repair`
 
 ## Security
 - User JWT stored in OS keyring (Secret Service)

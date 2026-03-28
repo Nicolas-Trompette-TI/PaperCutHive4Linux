@@ -6,6 +6,8 @@
 ./setup.sh
 ```
 
+`setup.sh` always runs `doctor` preflight before installation.
+
 ## Recommended (non-interactive)
 
 ```bash
@@ -15,6 +17,13 @@
 Useful flags:
 - `--python-mode auto|apt-only` (default: `auto`)
 - `--no-notify` to disable desktop popups
+
+Health and repair:
+
+```bash
+./setup.sh --doctor --org-id <ORG_ID>
+./setup.sh --repair --org-id <ORG_ID>
+```
 
 ## Manual Step-by-Step (advanced)
 
@@ -29,3 +38,4 @@ Useful flags:
 - In GUI applications, choose printer `PaperCut-Hive-TIF`.
 - Token sync runs by user timer and now auto-refreshes from extension storage if token is invalid.
 - If refresh is impossible, the user gets a desktop popup asking to reconnect the extension.
+- Structured support logs are stored in `~/.local/state/papercut-hive-lite/events.jsonl`.

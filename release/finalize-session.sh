@@ -2,6 +2,7 @@
 set -euo pipefail
 
 BASE="$(cd "$(dirname "$0")/.." && pwd)"
+EVENT_LOG="$BASE/scripts/papercut_event_log.sh"
 
 ORG_ID=""
 CLOUD_HOST="eu.hive.papercut.com"
@@ -57,10 +58,18 @@ notify_user() {
   "$BASE/scripts/papercut_notify.sh" --level "$level" --title "PaperCut Hive Driver" --message "$message" || true
 }
 
+log_event() {
+  [[ -x "$EVENT_LOG" ]] || return 0
+  "$EVENT_LOG" "$@" || true
+}
+
 on_error() {
+  log_event --component finalize --level error --event failed --message "Finalize failed"
   notify_user error "Finalize failed. Check terminal logs."
 }
 trap on_error ERR
+
+log_event --component finalize --event start --message "Finalize started" --kv "user=$LINUX_USER"
 
 systemctl --user daemon-reload
 systemctl --user enable --now papercut-hive-token-sync.timer
@@ -88,4 +97,5 @@ fi
 systemctl --user start papercut-hive-token-sync.service
 
 echo "Finalize session complete."
+log_event --component finalize --event complete --message "Finalize completed successfully"
 notify_user info "Finalize complete. Secure token sync is active."

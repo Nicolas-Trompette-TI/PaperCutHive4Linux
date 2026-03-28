@@ -5,6 +5,7 @@ ALERT_DIR="/var/lib/papercut-hive-lite/alerts"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/papercut-hive-lite"
 SEEN_FILE=""
 NOTIFY_SCRIPT="/usr/local/lib/papercut-hive-lite/papercut_notify.sh"
+EVENT_LOG_SCRIPT="/usr/local/lib/papercut-hive-lite/papercut_event_log.sh"
 DRY_RUN=0
 
 usage() {
@@ -18,6 +19,7 @@ Options:
   --state-dir <dir>      default: \$XDG_STATE_HOME/papercut-hive-lite
   --seen-file <path>     override dedup state file path
   --notify-script <path> default: /usr/local/lib/papercut-hive-lite/papercut_notify.sh
+  --event-log-script <path> default: /usr/local/lib/papercut-hive-lite/papercut_event_log.sh
   --dry-run              print actions only
   -h, --help             show help
 EOF
@@ -29,11 +31,19 @@ while [[ $# -gt 0 ]]; do
     --state-dir) STATE_DIR="${2:-}"; shift 2 ;;
     --seen-file) SEEN_FILE="${2:-}"; shift 2 ;;
     --notify-script) NOTIFY_SCRIPT="${2:-}"; shift 2 ;;
+    --event-log-script) EVENT_LOG_SCRIPT="${2:-}"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+if [[ ! -x "$EVENT_LOG_SCRIPT" ]]; then
+  local_guess="$(cd "$(dirname "$0")" && pwd)/papercut_event_log.sh"
+  if [[ -x "$local_guess" ]]; then
+    EVENT_LOG_SCRIPT="$local_guess"
+  fi
+fi
 
 if [[ -z "$SEEN_FILE" ]]; then
   SEEN_FILE="$STATE_DIR/alerts-seen.txt"
@@ -69,6 +79,27 @@ notify_one() {
   fi
 }
 
+log_alert_event() {
+  local code="$1"
+  local queue="$2"
+  local job_id="$3"
+  [[ -x "$EVENT_LOG_SCRIPT" ]] || return 0
+  local cmd=(
+    "$EVENT_LOG_SCRIPT"
+    --component notify
+    --event print-fail
+    --level warning
+    --message "Print alert detected"
+    --kv "code=$code"
+    --kv "queue=$queue"
+    --kv "job_id=$job_id"
+  )
+  if [[ $DRY_RUN -eq 1 ]]; then
+    cmd+=(--dry-run)
+  fi
+  "${cmd[@]}" || true
+}
+
 while IFS= read -r alert_file; do
   [[ -f "$alert_file" ]] || continue
   alert_id="$(basename "$alert_file")"
@@ -96,6 +127,7 @@ while IFS= read -r alert_file; do
   else
     notify_one "PaperCut Hive Print Issue" "Queue: $queue | Job: $job_id | Error: $code | Time: $ts"
   fi
+  log_alert_event "$code" "$queue" "$job_id"
   echo "$alert_id" >>"$SEEN_FILE"
 done < <(find "$ALERT_DIR" -maxdepth 1 -type f -name '*.alert' 2>/dev/null | sort)
 

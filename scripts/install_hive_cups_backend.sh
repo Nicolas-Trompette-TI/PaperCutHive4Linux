@@ -102,12 +102,14 @@ run_cmd sudo mkdir -p /usr/local/lib/papercut-hive-lite
 run_cmd sudo cp "$BASE/scripts/papercut_submit_job.py" /usr/local/lib/papercut-hive-lite/papercut_submit_job.py
 run_cmd sudo cp "$BASE/scripts/papercut_cups_backend.sh" /usr/local/lib/papercut-hive-lite/papercut_cups_backend.sh
 run_cmd sudo cp "$BASE/scripts/papercut_notify.sh" /usr/local/lib/papercut-hive-lite/papercut_notify.sh
+run_cmd sudo cp "$BASE/scripts/papercut_event_log.sh" /usr/local/lib/papercut-hive-lite/papercut_event_log.sh
 run_cmd sudo cp "$BASE/scripts/papercut_alert_notify.sh" /usr/local/lib/papercut-hive-lite/papercut_alert_notify.sh
 run_cmd sudo cp "$BASE/scripts/papercut_python_bootstrap.sh" /usr/local/lib/papercut-hive-lite/papercut_python_bootstrap.sh
 run_cmd sudo chmod 755 \
   /usr/local/lib/papercut-hive-lite/papercut_submit_job.py \
   /usr/local/lib/papercut-hive-lite/papercut_cups_backend.sh \
   /usr/local/lib/papercut-hive-lite/papercut_notify.sh \
+  /usr/local/lib/papercut-hive-lite/papercut_event_log.sh \
   /usr/local/lib/papercut-hive-lite/papercut_alert_notify.sh \
   /usr/local/lib/papercut-hive-lite/papercut_python_bootstrap.sh
 run_cmd sudo mkdir -p /var/lib/papercut-hive-lite/alerts

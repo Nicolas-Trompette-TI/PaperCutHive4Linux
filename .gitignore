@@ -6,3 +6,6 @@ tools/
 # Python build/runtime cache
 __pycache__/
 *.py[cod]
+
+# Packaging artifacts
+dist/

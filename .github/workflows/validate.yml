@@ -1,0 +1,22 @@
+name: Validate
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  offline-dry-run:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y dpkg-dev
+
+      - name: Run offline dry-run integration
+        run: |
+          bash tests/integration/offline_dry_run.sh

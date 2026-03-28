@@ -57,49 +57,66 @@ fi
 
 extract_from_extension() {
   local profile="$1"
-  local scan_dir=""
+  local -a scan_dirs=()
+  local -a roots=()
+
+  add_scan_dirs_from_root() {
+    local root="$1"
+    [[ -d "$root" ]] || return 0
+    while IFS= read -r found; do
+      [[ -n "$found" ]] && scan_dirs+=("$found")
+    done < <(find "$root" -maxdepth 4 -type d -path "*/Sync Extension Settings/$EXT_ID" 2>/dev/null | sort)
+  }
 
   if [[ -z "$profile" ]]; then
-    for candidate in \
-      "$HOME/.config/google-chrome" \
-      "$HOME/.config/chromium" \
+    roots=(
+      "$HOME/.config/google-chrome"
+      "$HOME/.config/chromium"
       "$BASE/tools/chromium-user-data-auth"
-    do
-      if [[ -d "$candidate/Default/Sync Extension Settings/$EXT_ID" ]]; then
-        profile="$candidate"
-        break
-      fi
+    )
+    for candidate in "${roots[@]}"; do
+      add_scan_dirs_from_root "$candidate"
     done
+  else
+    roots=("$profile")
+    if [[ -d "$profile/Sync Extension Settings/$EXT_ID" ]]; then
+      scan_dirs+=("$profile/Sync Extension Settings/$EXT_ID")
+    fi
+    if [[ -d "$profile/Default/Sync Extension Settings/$EXT_ID" ]]; then
+      scan_dirs+=("$profile/Default/Sync Extension Settings/$EXT_ID")
+    fi
+    add_scan_dirs_from_root "$profile"
   fi
 
-  if [[ -z "$profile" ]]; then
-    echo "Unable to auto-detect extension profile. Use --profile-dir." >&2
+  if [[ ${#scan_dirs[@]} -eq 0 ]]; then
+    if [[ -z "$profile" ]]; then
+      echo "Unable to auto-detect extension sync storage. Open linked Chrome/Chromium first or use --profile-dir." >&2
+    else
+      echo "Sync extension settings not found under profile root: $profile" >&2
+    fi
     return 1
   fi
 
-  scan_dir="$profile/Default/Sync Extension Settings/$EXT_ID"
-  if [[ ! -d "$scan_dir" ]]; then
-    echo "Sync extension settings not found: $scan_dir" >&2
-    return 1
-  fi
-
-  python3 - <<'PY' "$scan_dir"
+  python3 - <<'PY' "${scan_dirs[@]}"
 import pathlib
 import re
 import sys
 
-scan_dir = pathlib.Path(sys.argv[1])
+scan_dirs = [pathlib.Path(p) for p in sys.argv[1:] if p]
 jwt_re = re.compile(r"eyJ[0-9A-Za-z_-]+\.[0-9A-Za-z_-]+\.[0-9A-Za-z_-]+")
 candidates = []
 
-for path in sorted(scan_dir.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
-    if path.name == "LOCK" or not path.is_file():
+for scan_dir in scan_dirs:
+    if not scan_dir.is_dir():
         continue
-    try:
-        data = path.read_bytes().decode("latin1", "ignore")
-    except Exception:
-        continue
-    candidates.extend(jwt_re.findall(data))
+    for path in sorted(scan_dir.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
+        if path.name == "LOCK" or not path.is_file():
+            continue
+        try:
+            data = path.read_bytes().decode("latin1", "ignore")
+        except Exception:
+            continue
+        candidates.extend(jwt_re.findall(data))
 
 if not candidates:
     raise SystemExit(1)

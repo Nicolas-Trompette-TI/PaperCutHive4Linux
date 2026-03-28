@@ -65,7 +65,11 @@ trap on_error ERR
 systemctl --user daemon-reload
 systemctl --user enable --now papercut-hive-token-sync.timer
 if [[ $ENABLE_NOTIFY -eq 1 ]]; then
-  systemctl --user enable --now papercut-hive-alert-notify.timer || true
+  if [[ -f "$HOME/.config/systemd/user/papercut-hive-alert-notify.timer" ]] || systemctl --user list-unit-files papercut-hive-alert-notify.timer >/dev/null 2>&1; then
+    systemctl --user enable --now papercut-hive-alert-notify.timer || true
+  else
+    echo "Info: papercut-hive-alert-notify.timer not installed in this session yet." >&2
+  fi
 fi
 systemctl --user reset-failed papercut-hive-token-sync.service || true
 

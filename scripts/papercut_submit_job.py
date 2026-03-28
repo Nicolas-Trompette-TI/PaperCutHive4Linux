@@ -220,6 +220,10 @@ def submit_print(
 
 
 def main():
+    def is_auth_error_text(text: str) -> bool:
+        t = (text or "").lower()
+        return "status=401" in t or "status=403" in t or " 401 " in t or " 403 " in t
+
     ap = argparse.ArgumentParser(description="Submit a print job to PaperCut endpoints using extension-compatible protocol")
     ap.add_argument("--cloud-host", default="eu.hive.papercut.com", help="Example: eu.hive.papercut.com")
     ap.add_argument("--org-id", default="", help="PaperCut org ID. Optional if claim endpoint returns one")
@@ -288,9 +292,14 @@ def main():
         id_token = args.id_token.strip()
         if not id_token:
             raise SystemExit("Need either --user-jwt or --id-token")
-        claimed_jwt, claimed_org_id, claim_res = claim_user_jwt(
-            pmitc_base, id_token, org_id, client_id, args.timeout, verify
-        )
+        try:
+            claimed_jwt, claimed_org_id, claim_res = claim_user_jwt(
+                pmitc_base, id_token, org_id, client_id, args.timeout, verify
+            )
+        except Exception as exc:
+            msg = f"claim token failed: {exc}"
+            print(msg, file=sys.stderr)
+            return 11 if is_auth_error_text(str(exc)) else 2
         user_jwt = claimed_jwt
         org_id = claimed_org_id
         report["used_claim"] = True
@@ -306,9 +315,14 @@ def main():
         report["selected_target_url"] = target_url
         report["selected_target"] = {"nodeType": "FORCED", "addresses": [target_url]}
     else:
-        targets, targets_res = get_targets(
-            pmitc_base, user_jwt, org_id, client_id, args.client_type, args.timeout, verify
-        )
+        try:
+            targets, targets_res = get_targets(
+                pmitc_base, user_jwt, org_id, client_id, args.client_type, args.timeout, verify
+            )
+        except Exception as exc:
+            msg = f"target discovery failed: {exc}"
+            print(msg, file=sys.stderr)
+            return 11 if is_auth_error_text(str(exc)) else 2
         report["targets_status"] = targets_res["status"]
         report["targets_count"] = len(targets)
         target_url, target_obj = select_target(targets)
@@ -335,23 +349,27 @@ def main():
             print(f"Wrote: {args.output_json}")
         return 0
 
-    submit_res = submit_print(
-        target_url=target_url,
-        user_jwt=user_jwt,
-        org_id=org_id,
-        client_id=client_id,
-        client_type=args.client_type,
-        file_path=args.file,
-        title=title,
-        copies=args.copies,
-        duplex=args.duplex,
-        color=args.color,
-        media_width=args.media_width,
-        media_height=args.media_height,
-        file_format=args.file_format,
-        timeout=args.timeout,
-        verify=verify,
-    )
+    try:
+        submit_res = submit_print(
+            target_url=target_url,
+            user_jwt=user_jwt,
+            org_id=org_id,
+            client_id=client_id,
+            client_type=args.client_type,
+            file_path=args.file,
+            title=title,
+            copies=args.copies,
+            duplex=args.duplex,
+            color=args.color,
+            media_width=args.media_width,
+            media_height=args.media_height,
+            file_format=args.file_format,
+            timeout=args.timeout,
+            verify=verify,
+        )
+    except Exception as exc:
+        print(f"submit failed: {exc}", file=sys.stderr)
+        return 2
     report["submit"] = submit_res
 
     text = json.dumps(report, indent=2)
@@ -361,7 +379,11 @@ def main():
         Path(args.output_json).write_text(text + "\n", encoding="utf-8")
         print(f"Wrote: {args.output_json}")
 
-    return 0 if submit_res["ok"] else 2
+    if submit_res["ok"]:
+        return 0
+    if submit_res.get("status") in (401, 403):
+        return 11
+    return 2
 
 
 if __name__ == "__main__":

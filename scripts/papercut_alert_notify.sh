@@ -91,7 +91,11 @@ while IFS= read -r alert_file; do
   [[ -n "$code" ]] || code="submit-failed"
   [[ -n "$ts" ]] || ts="unknown-time"
 
-  notify_one "PaperCut Hive Print Issue" "Queue: $queue | Job: $job_id | Error: $code | Time: $ts"
+  if [[ "$code" == "token-invalid" ]]; then
+    notify_one "PaperCut Hive Session Needed" "Session expired for $queue. Open Chrome/Chromium, reconnect PaperCut Hive extension, then retry print."
+  else
+    notify_one "PaperCut Hive Print Issue" "Queue: $queue | Job: $job_id | Error: $code | Time: $ts"
+  fi
   echo "$alert_id" >>"$SEEN_FILE"
 done < <(find "$ALERT_DIR" -maxdepth 1 -type f -name '*.alert' 2>/dev/null | sort)
 

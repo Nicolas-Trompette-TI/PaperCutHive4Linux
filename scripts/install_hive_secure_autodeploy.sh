@@ -135,6 +135,7 @@ else
   cat <<EOF | sudo -u "$LINUX_USER" tee "$USER_HOME/.config/papercut-hive-lite/secret-sync.env" >/dev/null
 PAPERCUT_ORG_ID="$ORG_ID"
 PAPERCUT_CLOUD_HOST="$CLOUD_HOST"
+PAPERCUT_PROFILE_DIR="$PROFILE_DIR"
 EOF
   chmod 600 "$USER_HOME/.config/papercut-hive-lite/secret-sync.env"
 
@@ -146,7 +147,7 @@ After=default.target
 [Service]
 Type=oneshot
 EnvironmentFile=%h/.config/papercut-hive-lite/secret-sync.env
-ExecStart=/bin/bash -lc '$BASE/scripts/papercut_secret_sync.sh --linux-user %u --org-id "\${PAPERCUT_ORG_ID}" --cloud-host "\${PAPERCUT_CLOUD_HOST}" --verbose'
+ExecStart=/bin/bash -lc '$BASE/scripts/papercut_secret_sync.sh --linux-user %u --org-id "\${PAPERCUT_ORG_ID}" --cloud-host "\${PAPERCUT_CLOUD_HOST}" --profile-dir "\${PAPERCUT_PROFILE_DIR}" --auto-refresh-from-extension --verbose'
 EOF
 
   cat <<'EOF' | sudo -u "$LINUX_USER" tee "$USER_HOME/.config/systemd/user/papercut-hive-token-sync.timer" >/dev/null

@@ -27,3 +27,5 @@ Useful flags:
 ## Notes
 - Run `finalize-session.sh` in a normal desktop user session.
 - In GUI applications, choose printer `PaperCut-Hive-TIF`.
+- Token sync runs by user timer and now auto-refreshes from extension storage if token is invalid.
+- If refresh is impossible, the user gets a desktop popup asking to reconnect the extension.

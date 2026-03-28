@@ -240,9 +240,16 @@ fi
 
 # Send backend output to CUPS error_log via stderr for troubleshooting.
 export PAPERCUT_STATE_DIR
-if ! "${cmd[@]}" 1>&2; then
+if "${cmd[@]}" 1>&2; then
+  :
+else
+  rc=$?
   echo "[$BACKEND_NAME] submit failed for job=$JOB_ID user=$CUPS_USER title=$TITLE" >&2
-  record_alert "submit-failed"
+  if [[ $rc -eq 11 ]]; then
+    record_alert "token-invalid"
+  else
+    record_alert "submit-failed"
+  fi
   exit 1
 fi
 

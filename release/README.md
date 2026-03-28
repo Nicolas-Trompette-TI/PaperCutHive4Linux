@@ -37,5 +37,6 @@ Health and repair:
 - Run `finalize-session.sh` in a normal desktop user session.
 - In GUI applications, choose printer `PaperCut-Hive-TIF`.
 - Token sync runs by user timer and now auto-refreshes from extension storage if token is invalid.
+- On token-related print failures, the alert service triggers an immediate token-sync attempt before asking manual re-login.
 - If refresh is impossible, the user gets a desktop popup asking to reconnect the extension.
 - Structured support logs are stored in `~/.local/state/papercut-hive-lite/events.jsonl`.

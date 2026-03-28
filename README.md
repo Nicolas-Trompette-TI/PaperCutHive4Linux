@@ -62,6 +62,7 @@ If setup was launched outside a graphical desktop session, run:
 - Default Python mode is `auto`: system `python3` + `python3-requests` first.
 - If system runtime is broken, installer can auto-fallback to a local driver venv.
 - Token sync timer auto-refreshes from the PaperCut browser extension if keyring token is missing/expired.
+- On `token-invalid`/`missing-token` print errors, the user-side alert service now triggers an immediate token-sync attempt automatically.
 - If token is still invalid during print, a desktop popup asks the user to reconnect the extension.
 - To force strict system mode: `--python-mode apt-only`.
 - To disable desktop notifications: `--no-notify`.

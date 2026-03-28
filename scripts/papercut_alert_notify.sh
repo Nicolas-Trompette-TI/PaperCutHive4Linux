@@ -83,6 +83,7 @@ log_alert_event() {
   local code="$1"
   local queue="$2"
   local job_id="$3"
+  local recovered="${4:-0}"
   [[ -x "$EVENT_LOG_SCRIPT" ]] || return 0
   local cmd=(
     "$EVENT_LOG_SCRIPT"
@@ -93,11 +94,35 @@ log_alert_event() {
     --kv "code=$code"
     --kv "queue=$queue"
     --kv "job_id=$job_id"
+    --kv "auto_recovered=$recovered"
   )
   if [[ $DRY_RUN -eq 1 ]]; then
     cmd+=(--dry-run)
   fi
   "${cmd[@]}" || true
+}
+
+attempt_auto_recovery() {
+  if [[ $DRY_RUN -eq 1 ]]; then
+    echo "[dry-run] token recovery via papercut-hive-token-sync.service"
+    return 0
+  fi
+  if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" || -z "${XDG_RUNTIME_DIR:-}" ]]; then
+    return 1
+  fi
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 1
+  fi
+  if ! systemctl --user list-unit-files papercut-hive-token-sync.service >/dev/null 2>&1; then
+    return 1
+  fi
+  if ! systemctl --user start papercut-hive-token-sync.service >/dev/null 2>&1; then
+    return 1
+  fi
+  if systemctl --user is-failed papercut-hive-token-sync.service >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
 }
 
 while IFS= read -r alert_file; do
@@ -122,12 +147,18 @@ while IFS= read -r alert_file; do
   [[ -n "$code" ]] || code="submit-failed"
   [[ -n "$ts" ]] || ts="unknown-time"
 
-  if [[ "$code" == "token-invalid" ]]; then
-    notify_one "PaperCut Hive Session Needed" "Session expired for $queue. Open Chrome/Chromium, reconnect PaperCut Hive extension, then retry print."
+  recovered=0
+  if [[ "$code" == "token-invalid" || "$code" == "missing-token" ]]; then
+    if attempt_auto_recovery; then
+      recovered=1
+      notify_one "PaperCut Hive Session Refreshed" "Token refreshed automatically for $queue. Retry your print now."
+    else
+      notify_one "PaperCut Hive Session Needed" "Session expired for $queue. Open Chrome/Chromium, reconnect PaperCut Hive extension (login/password if asked), then retry print."
+    fi
   else
     notify_one "PaperCut Hive Print Issue" "Queue: $queue | Job: $job_id | Error: $code | Time: $ts"
   fi
-  log_alert_event "$code" "$queue" "$job_id"
+  log_alert_event "$code" "$queue" "$job_id" "$recovered"
   echo "$alert_id" >>"$SEEN_FILE"
 done < <(find "$ALERT_DIR" -maxdepth 1 -type f -name '*.alert' 2>/dev/null | sort)
 

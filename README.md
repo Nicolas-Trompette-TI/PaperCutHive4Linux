@@ -2,7 +2,7 @@
 
 Install once, then print from standard Linux apps to PaperCut Hive/Pocket.
 
-## Quick Start (Autopilot, No Browser Extension Required)
+## Quick Start - Autopilot
 
 ```bash
 git clone https://github.com/Nicolas-Trompette-TI/PaperCutHive4Linux.git
@@ -18,7 +18,7 @@ Default user flow:
 
 `setup.sh` is now the main entrypoint for both first install and day-2 repair.
 
-## What `setup.sh` does (pipeline)
+## What `setup.sh` does:
 
 1. Auth (password mode by default)
 2. Preflight advisory (`doctor`)

@@ -10,22 +10,23 @@ ORG_ID=""
 CLOUD_HOST="eu.hive.papercut.com"
 JWT=""
 FROM_EXTENSION=0
+JWT_FROM_STDIN=0
 PROFILE_DIR=""
 SYNC_NOW=0
 DRY_RUN=0
 
 usage() {
   cat <<EOF
-Usage: $0 --org-id <ORG_ID> [options]
+Usage: $0 [options]
 
 Stores PaperCut JWT in OS keyring (Secret Service/libsecret) using secure attrs:
   papercut=hive-lite kind=user-jwt user=<user> org=<org> cloud=<host>
 
 Options:
-  --org-id <ORG_ID>         required
+  --org-id <ORG_ID>         optional if inferable from JWT claims
   --cloud-host <host>       default: eu.hive.papercut.com
   --linux-user <user>       default: current user
-  --jwt <token>             provide JWT directly (avoid if possible)
+  --jwt-stdin               read JWT from stdin (recommended for automation)
   --from-extension          extract JWT from browser extension sync storage
   --profile-dir <dir>       user-data dir for --from-extension
   --sync-now                run papercut_secret_sync.sh after storing
@@ -39,7 +40,7 @@ while [[ $# -gt 0 ]]; do
     --org-id) ORG_ID="${2:-}"; shift 2 ;;
     --cloud-host) CLOUD_HOST="${2:-}"; shift 2 ;;
     --linux-user) LINUX_USER="${2:-}"; shift 2 ;;
-    --jwt) JWT="${2:-}"; shift 2 ;;
+    --jwt-stdin) JWT_FROM_STDIN=1; shift ;;
     --from-extension) FROM_EXTENSION=1; shift ;;
     --profile-dir) PROFILE_DIR="${2:-}"; shift 2 ;;
     --sync-now) SYNC_NOW=1; shift ;;
@@ -49,9 +50,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$ORG_ID" ]]; then
-  echo "--org-id is required." >&2
-  usage
+if [[ $FROM_EXTENSION -eq 1 && $JWT_FROM_STDIN -eq 1 ]]; then
+  echo "Choose only one JWT source: --from-extension or --jwt-stdin." >&2
   exit 1
 fi
 
@@ -125,7 +125,7 @@ print(max(candidates, key=len))
 PY
 }
 
-if [[ -z "$JWT" && $FROM_EXTENSION -eq 1 ]]; then
+if [[ $FROM_EXTENSION -eq 1 ]]; then
   JWT="$(extract_from_extension "$PROFILE_DIR" || true)"
   if [[ -z "$JWT" ]]; then
     echo "Failed to extract JWT from extension storage." >&2
@@ -133,7 +133,11 @@ if [[ -z "$JWT" && $FROM_EXTENSION -eq 1 ]]; then
   fi
 fi
 
-if [[ -z "$JWT" ]]; then
+if [[ -z "$JWT" && $JWT_FROM_STDIN -eq 1 ]]; then
+  IFS= read -r JWT || true
+fi
+
+if [[ -z "$JWT" && $JWT_FROM_STDIN -eq 0 ]]; then
   read -r -s -p "Enter PaperCut JWT: " JWT
   echo
 fi
@@ -145,6 +149,18 @@ fi
 
 if ! [[ "$JWT" =~ ^eyJ[[:alnum:]_-]+\.[[:alnum:]_-]+\.[[:alnum:]_-]+$ ]]; then
   echo "Token does not look like a JWT." >&2
+  exit 1
+fi
+
+if [[ -z "$ORG_ID" ]]; then
+  ORG_ID="$(printf '%s\n' "$JWT" | "$BASE/scripts/papercut_detect_org_id.sh" --jwt-stdin 2>/dev/null || true)"
+  if [[ -n "$ORG_ID" ]]; then
+    echo "Detected Org ID from token claims: $ORG_ID"
+  fi
+fi
+
+if [[ -z "$ORG_ID" ]]; then
+  echo "Unable to infer Org ID from token. Provide --org-id <ORG_ID>." >&2
   exit 1
 fi
 

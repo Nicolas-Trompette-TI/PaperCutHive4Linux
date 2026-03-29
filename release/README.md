@@ -1,42 +1,66 @@
 # Release Commands
 
-## Recommended (interactive)
+## Recommended (Interactive)
 
 ```bash
 ./setup.sh
 ```
 
-`setup.sh` always runs `doctor` preflight before installation.
+Default behavior (`--auth-mode password`):
+- asks for PaperCut email/password in terminal
+- does not store the password
+- fetches token + Org ID automatically
+- does not require browser extension
 
-## Recommended (non-interactive)
+## Auth Modes
 
 ```bash
-./setup.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
+./setup.sh --auth-mode password --login-email you@company.com
+./setup.sh --auth-mode auto
+./setup.sh --auth-mode extension --org-id <ORG_ID>
 ```
 
-Useful flags:
-- `--python-mode auto|apt-only` (default: `auto`)
-- `--no-notify` to disable desktop popups
+- `password`: no extension required
+- `auto`: tries password login first, fallback to extension/config/manual org flow
+- `extension`: extension/config/manual org flow only
 
-Health and repair:
+## Non-Interactive Example
+
+```bash
+./setup.sh --auth-mode extension --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
+```
+
+## Health / Repair
 
 ```bash
 ./setup.sh --doctor --org-id <ORG_ID>
 ./setup.sh --repair --org-id <ORG_ID>
 ```
 
-## Manual Step-by-Step (advanced)
+## Manual Step-By-Step (Advanced)
 
 ```bash
 ./release/install.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
-./release/finalize-session.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER"
+./release/finalize-session.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER" --no-bootstrap-from-extension
 ./release/verify-print.sh --printer-name PaperCut-Hive-TIF
 ```
 
+## Finalize Variants
+
+No extension / password mode:
+
+```bash
+./release/finalize-session.sh --org-id <ORG_ID> --cloud-host eu.hive.papercut.com --linux-user "$USER" --no-bootstrap-from-extension
+```
+
+Extension mode:
+
+```bash
+./release/finalize-session.sh --cloud-host eu.hive.papercut.com --linux-user "$USER"
+```
+
 ## Notes
+
 - Run `finalize-session.sh` in a normal desktop user session.
 - In GUI applications, choose printer `PaperCut-Hive-TIF`.
-- Token sync runs by user timer and now auto-refreshes from extension storage if token is invalid.
-- On token-related print failures, the alert service triggers an immediate token-sync attempt before asking manual re-login.
-- If refresh is impossible, the user gets a desktop popup asking to reconnect the extension.
 - Structured support logs are stored in `~/.local/state/papercut-hive-lite/events.jsonl`.

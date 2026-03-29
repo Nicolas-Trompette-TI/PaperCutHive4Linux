@@ -43,12 +43,14 @@ if [[ "$PW1" != "$PW2" ]]; then
 fi
 
 COLLECTION_PATH="$(
-  printf '%s' "$PW1" | python3 - <<'PY' "$LABEL"
+  python3 - "$LABEL" 3<<<"$PW1" <<'PY'
+import os
 import sys
 import dbus
 
 label = sys.argv[1]
-password = sys.stdin.buffer.read()
+with os.fdopen(3, "rb") as stream:
+    password = stream.read()
 
 bus = dbus.SessionBus()
 svc_obj = bus.get_object("org.freedesktop.secrets", "/org/freedesktop/secrets")

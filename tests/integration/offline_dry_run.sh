@@ -11,8 +11,18 @@ cd "$BASE"
 echo "[ci] shell syntax"
 bash -n setup.sh release/*.sh scripts/*.sh packaging/build_deb.sh
 
+echo "[ci] secure coding guard"
+bash tests/security/secure_coding_guard.sh
+
 echo "[ci] python syntax"
-python3 -m py_compile scripts/papercut_submit_job.py
+python3 -m py_compile scripts/papercut_submit_job.py scripts/papercut_password_login.py
+
+echo "[ci] org-id parser"
+ORG_FROM_URL="$(./scripts/papercut_detect_org_id.sh --from-input "https://hive.papercut.com/10196b04/dashboard" || true)"
+if [[ "$ORG_FROM_URL" != "10196b04" ]]; then
+  echo "org-id parser failed for admin URL: '$ORG_FROM_URL'" >&2
+  exit 1
+fi
 
 echo "[ci] submit offline dry-run"
 python3 scripts/papercut_submit_job.py \
@@ -34,7 +44,31 @@ if [[ "$rc_doctor" -ne 0 && "$rc_doctor" -ne 2 ]]; then
 fi
 
 echo "[ci] setup dry-run"
-./setup.sh --org-id 10196b04 --dry-run --yes --skip-verify --no-bootstrap-from-extension --no-notify >/dev/null
+setup_out="$(
+  ./setup.sh \
+    --org-id 10196b04 \
+    --dry-run \
+    --yes \
+    --skip-verify \
+    --no-bootstrap-from-extension \
+    --no-notify \
+    --no-color \
+    --no-progress
+)"
+if printf '%s' "$setup_out" | grep -q $'\033'; then
+  echo "setup dry-run should not emit ANSI escapes with --no-color" >&2
+  exit 1
+fi
+
+echo "[ci] setup help advertises UI flags"
+if ! ./setup.sh --help | grep -q -- '--no-color'; then
+  echo "setup --help missing --no-color" >&2
+  exit 1
+fi
+if ! ./setup.sh --help | grep -q -- '--no-progress'; then
+  echo "setup --help missing --no-progress" >&2
+  exit 1
+fi
 
 echo "[ci] setup doctor mode dry-run"
 set +e

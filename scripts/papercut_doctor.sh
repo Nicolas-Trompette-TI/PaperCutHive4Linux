@@ -3,7 +3,6 @@ set -euo pipefail
 
 BASE="$(cd "$(dirname "$0")/.." && pwd)"
 EVENT_LOG="$BASE/scripts/papercut_event_log.sh"
-EXT_ID="pdlopiakikhioinbeibaachakgdgllff"
 
 PRINTER_NAME="PaperCut-Hive-TIF"
 LINUX_USER="${USER}"
@@ -11,6 +10,7 @@ ORG_ID=""
 CLOUD_HOST="eu.hive.papercut.com"
 AUTO_YES=0
 DRY_RUN=0
+ALLOW_QUEUE_RECREATE=0
 
 WARNINGS=0
 CRITICALS=0
@@ -30,13 +30,13 @@ Doctor preflight checks for PaperCut Hive Driver:
 - CUPS service/backend/queue
 - user systemd timers
 - keyring/token state
-- browser extension detection
 
 Options:
   --org-id <ORG_ID>         optional (enables token state check)
   --cloud-host <host>       default: eu.hive.papercut.com
   --linux-user <user>       default: current user
   --printer-name <name>     default: PaperCut-Hive-TIF
+  --allow-queue-recreate    backend/queue checks are warnings (for pre-install setup)
   -y, --yes                 auto-confirm apt install prompts
   --dry-run                 do not install missing dependencies
   -h, --help                show help
@@ -67,6 +67,69 @@ is_pkg_installed() {
   dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"
 }
 
+mode_is_subset() {
+  local mode="$1"
+  local allowed="$2"
+  [[ "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+  [[ "$allowed" =~ ^[0-7]{3,4}$ ]] || return 1
+  local mode_int allowed_int
+  mode_int=$((8#$mode))
+  allowed_int=$((8#$allowed))
+  (( (mode_int | allowed_int) == allowed_int ))
+}
+
+check_secure_path() {
+  local path="$1"
+  local expected_type="$2"
+  local expected_owner="$3"
+  local expected_group="$4"
+  local max_mode="$5"
+  local label="$6"
+  local actual_owner actual_group actual_mode stat_out
+
+  if [[ ! -e "$path" ]]; then
+    warn "$label missing: $path"
+    return 1
+  fi
+
+  if [[ -L "$path" ]]; then
+    crit "$label must not be a symlink: $path"
+    return 1
+  fi
+
+  if [[ "$expected_type" == "file" ]]; then
+    if [[ ! -f "$path" ]]; then
+      crit "$label is not a regular file: $path"
+      return 1
+    fi
+  elif [[ "$expected_type" == "dir" ]]; then
+    if [[ ! -d "$path" ]]; then
+      crit "$label is not a directory: $path"
+      return 1
+    fi
+  else
+    warn "internal doctor error: unknown type '$expected_type' for $label"
+    return 1
+  fi
+
+  stat_out="$(stat -Lc '%U %G %a' "$path" 2>/dev/null || true)"
+  if [[ -z "$stat_out" ]]; then
+    warn "unable to stat $label: $path"
+    return 1
+  fi
+  IFS=' ' read -r actual_owner actual_group actual_mode <<<"$stat_out"
+
+  if [[ "$actual_owner" != "$expected_owner" || "$actual_group" != "$expected_group" ]]; then
+    crit "$label ownership should be $expected_owner:$expected_group (found $actual_owner:$actual_group): $path"
+    return 1
+  fi
+
+  if ! mode_is_subset "$actual_mode" "$max_mode"; then
+    crit "$label permissions too broad (mode $actual_mode, expected <= $max_mode): $path"
+    return 1
+  fi
+}
+
 resolve_config_value() {
   local key="$1"
   local cfg="/etc/papercut-hive-lite/config.env"
@@ -91,13 +154,15 @@ prompt_yes_no() {
 
 token_state() {
   local tok="${1:-}"
-  python3 - <<'PY' "$tok"
+  python3 - 3<<<"$tok" <<'PY'
 import base64
 import json
+import os
 import sys
 import time
 
-tok = (sys.argv[1] or "").strip()
+with os.fdopen(3, "r", encoding="utf-8", errors="replace") as stream:
+    tok = (stream.read() or "").strip()
 if not tok:
     print("MISSING")
     raise SystemExit(0)
@@ -123,22 +188,13 @@ else:
 PY
 }
 
-find_extension_dir() {
-  local -a roots
-  roots=(
-    "$HOME/.config/google-chrome"
-    "$HOME/.config/chromium"
-    "$BASE/tools/chromium-user-data-auth"
-  )
-  find "${roots[@]}" -maxdepth 4 -type d -path "*/Sync Extension Settings/$EXT_ID" 2>/dev/null | head -n1 || true
-}
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --org-id) ORG_ID="${2:-}"; shift 2 ;;
     --cloud-host) CLOUD_HOST="${2:-}"; shift 2 ;;
     --linux-user) LINUX_USER="${2:-}"; shift 2 ;;
     --printer-name) PRINTER_NAME="${2:-}"; shift 2 ;;
+    --allow-queue-recreate) ALLOW_QUEUE_RECREATE=1; shift ;;
     -y|--yes) AUTO_YES=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -218,15 +274,27 @@ else
   fi
 fi
 if [[ ! -x /usr/lib/cups/backend/papercut-hive-lite ]]; then
-  crit "CUPS backend missing: /usr/lib/cups/backend/papercut-hive-lite"
+  if [[ $ALLOW_QUEUE_RECREATE -eq 1 ]]; then
+    warn "CUPS backend missing: /usr/lib/cups/backend/papercut-hive-lite (will be installed)"
+  else
+    crit "CUPS backend missing: /usr/lib/cups/backend/papercut-hive-lite"
+  fi
 fi
 if command -v lpstat >/dev/null 2>&1; then
   if ! lpstat -p "$PRINTER_NAME" >/dev/null 2>&1; then
-    crit "queue not found: $PRINTER_NAME"
+    if [[ $ALLOW_QUEUE_RECREATE -eq 1 ]]; then
+      warn "queue not found: $PRINTER_NAME (will be created during install)"
+    else
+      crit "queue not found: $PRINTER_NAME"
+    fi
   else
     uri_line="$(lpstat -v "$PRINTER_NAME" 2>/dev/null | head -n1 || true)"
     if [[ "$uri_line" != *"papercut-hive-lite:/"* ]]; then
-      crit "queue URI mismatch for $PRINTER_NAME (expected papercut-hive-lite:/)"
+      if [[ $ALLOW_QUEUE_RECREATE -eq 1 ]]; then
+        warn "queue URI mismatch for $PRINTER_NAME; existing queue will be replaced during install"
+      else
+        crit "queue URI mismatch for $PRINTER_NAME (expected papercut-hive-lite:/)"
+      fi
     fi
   fi
 fi
@@ -277,12 +345,26 @@ else
   fi
 fi
 
-echo "[doctor] checking browser extension"
-ext_dir="$(find_extension_dir)"
-if [[ -z "$ext_dir" ]]; then
-  warn "PaperCut extension storage not detected"
+echo "[doctor] checking sensitive file permissions"
+check_secure_path /etc/papercut-hive-lite/config.env file root lp 640 "config.env" || true
+check_secure_path /etc/papercut-hive-lite/tokens dir root lp 750 "tokens directory" || true
+if [[ -f "/usr/local/sbin/papercut-hive-token-sync" ]]; then
+  check_secure_path /usr/local/sbin/papercut-hive-token-sync file root root 755 "root token sync helper" || true
 else
-  echo "[doctor] extension detected: $ext_dir"
+  warn "root token sync helper missing: /usr/local/sbin/papercut-hive-token-sync"
+fi
+
+if [[ "$LINUX_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  user_token_file="/etc/papercut-hive-lite/tokens/${LINUX_USER}.jwt"
+  if [[ -f "$user_token_file" ]]; then
+    check_secure_path "$user_token_file" file root lp 640 "user token file" || true
+  fi
+else
+  warn "linux user contains unsafe characters, skipping token path check for '$LINUX_USER'"
+fi
+
+if [[ -f "/etc/papercut-hive-lite/tokens/default.jwt" ]]; then
+  check_secure_path /etc/papercut-hive-lite/tokens/default.jwt file root lp 640 "default token file" || true
 fi
 
 summary="warnings=$WARNINGS criticals=$CRITICALS"

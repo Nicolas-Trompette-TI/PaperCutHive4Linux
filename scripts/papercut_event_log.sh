@@ -81,7 +81,7 @@ kv_pairs = sys.argv[5:]
 
 sensitive = re.compile(r"(token|jwt|password|secret)", re.IGNORECASE)
 entry = {
-    "timestamp_utc": dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+    "timestamp_utc": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     "level": level,
     "component": component,
     "event": event,

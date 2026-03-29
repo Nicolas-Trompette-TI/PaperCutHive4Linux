@@ -13,6 +13,13 @@ from urllib.parse import urlparse
 import requests
 
 
+def read_secret_line_from_stdin(label: str) -> str:
+    value = sys.stdin.buffer.readline()
+    if not value:
+        raise SystemExit(f"Missing {label} on stdin")
+    return value.decode("utf-8", "replace").strip()
+
+
 def now_compact_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 
@@ -227,8 +234,8 @@ def main():
     ap = argparse.ArgumentParser(description="Submit a print job to PaperCut endpoints using extension-compatible protocol")
     ap.add_argument("--cloud-host", default="eu.hive.papercut.com", help="Example: eu.hive.papercut.com")
     ap.add_argument("--org-id", default="", help="PaperCut org ID. Optional if claim endpoint returns one")
-    ap.add_argument("--user-jwt", default="", help="User JWT token (already claimed). If absent, --id-token is used")
-    ap.add_argument("--id-token", default="", help="PaperCut ID token to claim user JWT")
+    ap.add_argument("--user-jwt-stdin", action="store_true", help="Read user JWT from stdin")
+    ap.add_argument("--id-token-stdin", action="store_true", help="Read id token from stdin and claim user JWT")
     ap.add_argument("--file", required=True, help="Path to file to send (typically PDF)")
     ap.add_argument("--title", default="", help="Document title")
     ap.add_argument("--copies", type=int, default=1)
@@ -239,7 +246,6 @@ def main():
     ap.add_argument("--file-format", default="application/pdf")
     ap.add_argument("--client-type", default="ChromeApp-2.4.1")
     ap.add_argument("--timeout", type=int, default=60)
-    ap.add_argument("--insecure", action="store_true", help="Disable TLS verification")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--offline-dry-run", action="store_true", help="No network calls; print computed request plan only")
     ap.add_argument("--target-url", default="", help="Skip target discovery and submit directly to this target base URL")
@@ -249,7 +255,10 @@ def main():
     if not os.path.isfile(args.file):
         raise SystemExit(f"File not found: {args.file}")
 
-    verify = not args.insecure
+    if args.user_jwt_stdin and args.id_token_stdin:
+        raise SystemExit("Choose only one auth source: --user-jwt-stdin or --id-token-stdin")
+
+    verify = True
     title = args.title or os.path.basename(args.file)
     client_id = get_client_id()
     pmitc_base = derive_pmitc_base(args.cloud_host)
@@ -263,7 +272,8 @@ def main():
         "selected_target": None,
     }
 
-    user_jwt = args.user_jwt.strip()
+    user_jwt = ""
+    id_token = ""
     org_id = args.org_id.strip()
 
     if args.offline_dry_run:
@@ -288,102 +298,112 @@ def main():
             print(f"Wrote: {args.output_json}")
         return 0
 
-    if not user_jwt:
-        id_token = args.id_token.strip()
-        if not id_token:
-            raise SystemExit("Need either --user-jwt or --id-token")
+    try:
+        if args.user_jwt_stdin:
+            user_jwt = read_secret_line_from_stdin("user JWT")
+
+        if not user_jwt:
+            if not args.id_token_stdin:
+                raise SystemExit("Need one auth source: --user-jwt-stdin or --id-token-stdin")
+            id_token = read_secret_line_from_stdin("id token")
+            if not id_token:
+                raise SystemExit("Empty id token on stdin")
+            try:
+                claimed_jwt, claimed_org_id, claim_res = claim_user_jwt(
+                    pmitc_base, id_token, org_id, client_id, args.timeout, verify
+                )
+            except Exception as exc:
+                msg = f"claim token failed: {exc}"
+                print(msg, file=sys.stderr)
+                return 11 if is_auth_error_text(str(exc)) else 2
+            user_jwt = claimed_jwt
+            org_id = claimed_org_id
+            report["used_claim"] = True
+            report["claim_status"] = claim_res["status"]
+            report["claimed_org_id"] = org_id
+            id_token = ""
+
+        if not org_id:
+            raise SystemExit("org_id is required and was not resolved")
+
+        forced_target = args.target_url.strip()
+        if forced_target:
+            target_url = forced_target
+            report["selected_target_url"] = target_url
+            report["selected_target"] = {"nodeType": "FORCED", "addresses": [target_url]}
+        else:
+            try:
+                targets, targets_res = get_targets(
+                    pmitc_base, user_jwt, org_id, client_id, args.client_type, args.timeout, verify
+                )
+            except Exception as exc:
+                msg = f"target discovery failed: {exc}"
+                print(msg, file=sys.stderr)
+                return 11 if is_auth_error_text(str(exc)) else 2
+            report["targets_status"] = targets_res["status"]
+            report["targets_count"] = len(targets)
+            target_url, target_obj = select_target(targets)
+            report["selected_target"] = target_obj
+            report["selected_target_url"] = target_url
+
+        if args.dry_run:
+            report["dry_run"] = True
+            report["would_submit"] = {
+                "url": target_url.rstrip("/") + "/print",
+                "title": title,
+                "copies": args.copies,
+                "duplex": args.duplex,
+                "color": args.color,
+                "media_width": args.media_width,
+                "media_height": args.media_height,
+                "file": args.file,
+                "file_format": args.file_format,
+            }
+            text = json.dumps(report, indent=2)
+            print(text)
+            if args.output_json:
+                Path(args.output_json).write_text(text + "\n", encoding="utf-8")
+                print(f"Wrote: {args.output_json}")
+            return 0
+
         try:
-            claimed_jwt, claimed_org_id, claim_res = claim_user_jwt(
-                pmitc_base, id_token, org_id, client_id, args.timeout, verify
+            submit_res = submit_print(
+                target_url=target_url,
+                user_jwt=user_jwt,
+                org_id=org_id,
+                client_id=client_id,
+                client_type=args.client_type,
+                file_path=args.file,
+                title=title,
+                copies=args.copies,
+                duplex=args.duplex,
+                color=args.color,
+                media_width=args.media_width,
+                media_height=args.media_height,
+                file_format=args.file_format,
+                timeout=args.timeout,
+                verify=verify,
             )
         except Exception as exc:
-            msg = f"claim token failed: {exc}"
-            print(msg, file=sys.stderr)
-            return 11 if is_auth_error_text(str(exc)) else 2
-        user_jwt = claimed_jwt
-        org_id = claimed_org_id
-        report["used_claim"] = True
-        report["claim_status"] = claim_res["status"]
-        report["claimed_org_id"] = org_id
+            print(f"submit failed: {exc}", file=sys.stderr)
+            return 2
+        report["submit"] = submit_res
 
-    if not org_id:
-        raise SystemExit("org_id is required and was not resolved")
-
-    forced_target = args.target_url.strip()
-    if forced_target:
-        target_url = forced_target
-        report["selected_target_url"] = target_url
-        report["selected_target"] = {"nodeType": "FORCED", "addresses": [target_url]}
-    else:
-        try:
-            targets, targets_res = get_targets(
-                pmitc_base, user_jwt, org_id, client_id, args.client_type, args.timeout, verify
-            )
-        except Exception as exc:
-            msg = f"target discovery failed: {exc}"
-            print(msg, file=sys.stderr)
-            return 11 if is_auth_error_text(str(exc)) else 2
-        report["targets_status"] = targets_res["status"]
-        report["targets_count"] = len(targets)
-        target_url, target_obj = select_target(targets)
-        report["selected_target"] = target_obj
-        report["selected_target_url"] = target_url
-
-    if args.dry_run:
-        report["dry_run"] = True
-        report["would_submit"] = {
-            "url": target_url.rstrip("/") + "/print",
-            "title": title,
-            "copies": args.copies,
-            "duplex": args.duplex,
-            "color": args.color,
-            "media_width": args.media_width,
-            "media_height": args.media_height,
-            "file": args.file,
-            "file_format": args.file_format,
-        }
         text = json.dumps(report, indent=2)
         print(text)
+
         if args.output_json:
             Path(args.output_json).write_text(text + "\n", encoding="utf-8")
             print(f"Wrote: {args.output_json}")
-        return 0
 
-    try:
-        submit_res = submit_print(
-            target_url=target_url,
-            user_jwt=user_jwt,
-            org_id=org_id,
-            client_id=client_id,
-            client_type=args.client_type,
-            file_path=args.file,
-            title=title,
-            copies=args.copies,
-            duplex=args.duplex,
-            color=args.color,
-            media_width=args.media_width,
-            media_height=args.media_height,
-            file_format=args.file_format,
-            timeout=args.timeout,
-            verify=verify,
-        )
-    except Exception as exc:
-        print(f"submit failed: {exc}", file=sys.stderr)
+        if submit_res["ok"]:
+            return 0
+        if submit_res.get("status") in (401, 403):
+            return 11
         return 2
-    report["submit"] = submit_res
-
-    text = json.dumps(report, indent=2)
-    print(text)
-
-    if args.output_json:
-        Path(args.output_json).write_text(text + "\n", encoding="utf-8")
-        print(f"Wrote: {args.output_json}")
-
-    if submit_res["ok"]:
-        return 0
-    if submit_res.get("status") in (401, 403):
-        return 11
-    return 2
+    finally:
+        user_jwt = ""
+        id_token = ""
 
 
 if __name__ == "__main__":

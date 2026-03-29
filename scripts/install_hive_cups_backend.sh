@@ -11,6 +11,7 @@ DRY_RUN=0
 ENABLE_DRY_BACKEND=0
 PYTHON_MODE="auto"
 ENABLE_NOTIFY=1
+QUEUE_MODEL="drv:///sample.drv/generic.ppd"
 
 usage() {
   cat <<EOF
@@ -77,8 +78,8 @@ PAPERCUT_ALERT_DIR="/var/lib/papercut-hive-lite/alerts"
 PAPERCUT_NOTIFY_ERRORS="${ENABLE_NOTIFY}"
 # Optional overrides:
 # PAPERCUT_TARGET_URL="https://<target>"
-# PAPERCUT_ID_TOKEN=""
-# PAPERCUT_USER_JWT=""
+# Token material should not be stored here.
+# Use keyring flow via scripts/papercut_secret_store.sh + scripts/papercut_secret_sync.sh
 # PAPERCUT_STATE_DIR="/var/lib/papercut-hive-lite"
 EOF
 )
@@ -143,12 +144,26 @@ run_cmd sudo systemctl enable --now cups
 run_cmd sudo systemctl restart cups
 
 echo "[6/6] create cups queue"
+if command -v lpstat >/dev/null 2>&1 && lpstat -p "$PRINTER_NAME" >/dev/null 2>&1; then
+  uri_line="$(lpstat -v "$PRINTER_NAME" 2>/dev/null | head -n1 || true)"
+  echo "[install] existing queue '$PRINTER_NAME' detected; it will be deleted and replaced."
+  [[ -n "$uri_line" ]] && echo "[install] current queue: $uri_line"
+fi
+if command -v lpinfo >/dev/null 2>&1; then
+  if ! lpinfo -m 2>/dev/null | grep -Fq "$QUEUE_MODEL"; then
+    echo "[install] model '$QUEUE_MODEL' unavailable on this host; falling back to raw."
+    QUEUE_MODEL="raw"
+  fi
+else
+  echo "[install] lpinfo unavailable; falling back to raw queue model."
+  QUEUE_MODEL="raw"
+fi
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "[dry-run] sudo lpadmin -x '$PRINTER_NAME' 2>/dev/null || true"
 else
   sudo lpadmin -x "$PRINTER_NAME" 2>/dev/null || true
 fi
-run_cmd sudo lpadmin -p "$PRINTER_NAME" -E -v papercut-hive-lite:/ -m raw
+run_cmd sudo lpadmin -p "$PRINTER_NAME" -E -v papercut-hive-lite:/ -m "$QUEUE_MODEL"
 run_cmd sudo cupsenable "$PRINTER_NAME"
 run_cmd sudo cupsaccept "$PRINTER_NAME"
 

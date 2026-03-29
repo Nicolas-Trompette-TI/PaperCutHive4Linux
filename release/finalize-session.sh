@@ -9,20 +9,23 @@ CLOUD_HOST="eu.hive.papercut.com"
 LINUX_USER="${USER}"
 PROFILE_DIR=""
 ENABLE_NOTIFY=1
+BOOTSTRAP_FROM_EXTENSION=1
 
 usage() {
   cat <<EOF
-Usage: $0 --org-id <ORG_ID> [options]
+Usage: $0 [options]
 
 Finalize secure deployment from a normal user desktop session:
 1) Enable systemd --user token sync timer
-2) Store JWT in OS keyring (from extension) and sync to CUPS token file
+2) Bootstrap/sync JWT to CUPS token file (from extension or existing keyring)
 
 Options:
-  --org-id <ORG_ID>         required
+  --org-id <ORG_ID>         optional in extension mode, required with --no-bootstrap-from-extension
   --cloud-host <host>       default: eu.hive.papercut.com
   --linux-user <user>       default: current user
   --profile-dir <dir>       browser profile dir for extension token extraction
+  --no-bootstrap-from-extension
+                             skip extension token extraction and sync existing keyring token only
   --no-notify               disable desktop notifications
   -h, --help                show help
 EOF
@@ -34,20 +37,20 @@ while [[ $# -gt 0 ]]; do
     --cloud-host) CLOUD_HOST="${2:-}"; shift 2 ;;
     --linux-user) LINUX_USER="${2:-}"; shift 2 ;;
     --profile-dir) PROFILE_DIR="${2:-}"; shift 2 ;;
+    --no-bootstrap-from-extension) BOOTSTRAP_FROM_EXTENSION=0; shift ;;
     --no-notify) ENABLE_NOTIFY=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
   esac
 done
 
-if [[ -z "$ORG_ID" ]]; then
-  echo "--org-id is required." >&2
-  usage
-  exit 1
-fi
-
 if [[ "$LINUX_USER" != "$USER" ]]; then
   echo "Run this script as the target user session ($LINUX_USER)." >&2
+  exit 1
+fi
+if ! id -Gn | tr ' ' '\n' | grep -Fxq "papercut-hive-users"; then
+  echo "Current session is missing active group 'papercut-hive-users'." >&2
+  echo "Log out/in (or open a new login session), then rerun finalize-session." >&2
   exit 1
 fi
 
@@ -82,18 +85,32 @@ if [[ $ENABLE_NOTIFY -eq 1 ]]; then
 fi
 systemctl --user reset-failed papercut-hive-token-sync.service || true
 
-store_cmd=(
-  "$BASE/scripts/papercut_secret_store.sh"
-  --org-id "$ORG_ID"
-  --cloud-host "$CLOUD_HOST"
-  --linux-user "$LINUX_USER"
-  --from-extension
-  --sync-now
-)
-if [[ -n "$PROFILE_DIR" ]]; then
-  store_cmd+=(--profile-dir "$PROFILE_DIR")
+if [[ $BOOTSTRAP_FROM_EXTENSION -eq 1 ]]; then
+  store_cmd=(
+    "$BASE/scripts/papercut_secret_store.sh"
+    --cloud-host "$CLOUD_HOST"
+    --linux-user "$LINUX_USER"
+    --from-extension
+    --sync-now
+  )
+  if [[ -n "$ORG_ID" ]]; then
+    store_cmd+=(--org-id "$ORG_ID")
+  fi
+  if [[ -n "$PROFILE_DIR" ]]; then
+    store_cmd+=(--profile-dir "$PROFILE_DIR")
+  fi
+  "${store_cmd[@]}"
+else
+  if [[ -z "$ORG_ID" ]]; then
+    echo "--org-id is required when --no-bootstrap-from-extension is used." >&2
+    exit 1
+  fi
+  "$BASE/scripts/papercut_secret_sync.sh" \
+    --org-id "$ORG_ID" \
+    --cloud-host "$CLOUD_HOST" \
+    --linux-user "$LINUX_USER" \
+    --verbose
 fi
-"${store_cmd[@]}"
 systemctl --user start papercut-hive-token-sync.service
 
 echo "Finalize session complete."

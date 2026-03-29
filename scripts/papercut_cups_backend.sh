@@ -12,6 +12,79 @@ CFG_FILE="/etc/papercut-hive-lite/config.env"
 PY_ENV_FILE="/etc/papercut-hive-lite/python.env"
 TOKENS_DIR="/etc/papercut-hive-lite/tokens"
 
+mode_is_subset() {
+  local mode="$1"
+  local allowed="$2"
+  [[ "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+  [[ "$allowed" =~ ^[0-7]{3,4}$ ]] || return 1
+  local mode_int allowed_int
+  mode_int=$((8#$mode))
+  allowed_int=$((8#$allowed))
+  (( (mode_int | allowed_int) == allowed_int ))
+}
+
+require_secure_path() {
+  local path="$1"
+  local expected_type="$2"
+  local expected_owner="$3"
+  local expected_group="$4"
+  local max_mode="$5"
+  local label="$6"
+  local stat_out owner group mode
+
+  if [[ ! -e "$path" ]]; then
+    echo "[$BACKEND_NAME] missing $label: $path" >&2
+    return 1
+  fi
+  if [[ -L "$path" ]]; then
+    echo "[$BACKEND_NAME] refusing symlink for $label: $path" >&2
+    return 1
+  fi
+  if [[ "$expected_type" == "file" ]]; then
+    if [[ ! -f "$path" ]]; then
+      echo "[$BACKEND_NAME] invalid $label (not regular file): $path" >&2
+      return 1
+    fi
+  elif [[ "$expected_type" == "dir" ]]; then
+    if [[ ! -d "$path" ]]; then
+      echo "[$BACKEND_NAME] invalid $label (not directory): $path" >&2
+      return 1
+    fi
+  else
+    echo "[$BACKEND_NAME] internal error: invalid secure path type '$expected_type'" >&2
+    return 1
+  fi
+
+  stat_out="$(stat -Lc '%U %G %a' "$path" 2>/dev/null || true)"
+  if [[ -z "$stat_out" ]]; then
+    echo "[$BACKEND_NAME] unable to stat $label: $path" >&2
+    return 1
+  fi
+  IFS=' ' read -r owner group mode <<<"$stat_out"
+
+  if [[ "$owner" != "$expected_owner" || "$group" != "$expected_group" ]]; then
+    echo "[$BACKEND_NAME] insecure ownership for $label (expected $expected_owner:$expected_group, got $owner:$group): $path" >&2
+    return 1
+  fi
+  if ! mode_is_subset "$mode" "$max_mode"; then
+    echo "[$BACKEND_NAME] insecure permissions for $label (mode $mode exceeds $max_mode): $path" >&2
+    return 1
+  fi
+  return 0
+}
+
+load_secure_env_file() {
+  local path="$1"
+  local label="$2"
+  local code="$3"
+  if ! require_secure_path "$path" file root lp 640 "$label"; then
+    record_alert "$code"
+    exit 1
+  fi
+  # shellcheck disable=SC1090
+  source "$path"
+}
+
 if [[ $# -le 1 ]]; then
   echo "network ${BACKEND_NAME} \"Unknown\" \"PaperCut Hive Lite (CUPS backend)\" \"PaperCut Hive Lite\""
   exit 0
@@ -52,22 +125,19 @@ record_alert() {
   chmod 644 "$alert_file" 2>/dev/null || true
 }
 
-if [[ ! -f "$CFG_FILE" ]]; then
-  echo "[$BACKEND_NAME] missing config: $CFG_FILE" >&2
-  record_alert "missing-config"
-  exit 1
-fi
 if [[ ! -r "$CFG_FILE" ]]; then
   echo "[$BACKEND_NAME] config is not readable by backend user: $CFG_FILE" >&2
   record_alert "unreadable-config"
   exit 1
 fi
-
-# shellcheck disable=SC1090
-source "$CFG_FILE"
-if [[ -r "$PY_ENV_FILE" ]]; then
-  # shellcheck disable=SC1090
-  source "$PY_ENV_FILE"
+load_secure_env_file "$CFG_FILE" "config file" "insecure-config"
+if [[ -e "$PY_ENV_FILE" ]]; then
+  if [[ ! -r "$PY_ENV_FILE" ]]; then
+    echo "[$BACKEND_NAME] python env exists but is not readable: $PY_ENV_FILE" >&2
+    record_alert "unreadable-python-env"
+    exit 1
+  fi
+  load_secure_env_file "$PY_ENV_FILE" "python env file" "insecure-python-env"
 fi
 
 : "${PAPERCUT_CLOUD_HOST:=eu.hive.papercut.com}"
@@ -84,26 +154,43 @@ fi
 : "${PAPERCUT_QUEUE_NAME:=PaperCut-Hive-TIF}"
 : "${PAPERCUT_PYTHON_BIN:=}"
 
-if [[ -f "$TOKENS_DIR/$CUPS_USER.jwt" ]]; then
-  if [[ ! -r "$TOKENS_DIR/$CUPS_USER.jwt" ]]; then
-    echo "[$BACKEND_NAME] token file exists but is not readable: $TOKENS_DIR/$CUPS_USER.jwt" >&2
+if ! require_secure_path "$TOKENS_DIR" dir root lp 750 "tokens directory"; then
+  record_alert "insecure-token-dir"
+  exit 1
+fi
+
+if [[ "$CUPS_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  user_token_file="$TOKENS_DIR/$CUPS_USER.jwt"
+  if [[ -f "$user_token_file" ]]; then
+    if ! require_secure_path "$user_token_file" file root lp 640 "user token file"; then
+      record_alert "insecure-token-file"
+      exit 1
+    fi
+    PAPERCUT_USER_JWT="$(tr -d '\n' < "$user_token_file")"
+  fi
+else
+  echo "[$BACKEND_NAME] rejecting unsafe CUPS user for token lookup: '$CUPS_USER'" >&2
+  record_alert "invalid-user"
+fi
+
+default_token_file="$TOKENS_DIR/default.jwt"
+if [[ -z "$PAPERCUT_USER_JWT" && -f "$default_token_file" ]]; then
+  if ! require_secure_path "$default_token_file" file root lp 640 "default token file"; then
+    record_alert "insecure-token-file"
     exit 1
   fi
-  PAPERCUT_USER_JWT="$(tr -d '\n' < "$TOKENS_DIR/$CUPS_USER.jwt")"
-elif [[ -f "$TOKENS_DIR/default.jwt" ]]; then
-  if [[ ! -r "$TOKENS_DIR/default.jwt" ]]; then
-    echo "[$BACKEND_NAME] token file exists but is not readable: $TOKENS_DIR/default.jwt" >&2
-    exit 1
-  fi
-  PAPERCUT_USER_JWT="$(tr -d '\n' < "$TOKENS_DIR/default.jwt")"
+  PAPERCUT_USER_JWT="$(tr -d '\n' < "$default_token_file")"
 fi
 
 WORK_INPUT=""
 TMP_INPUT=""
 TMP_PDF=""
+AUTH_MODE=""
+AUTH_TOKEN=""
 cleanup() {
   [[ -n "$TMP_INPUT" && -f "$TMP_INPUT" ]] && rm -f "$TMP_INPUT" || true
   [[ -n "$TMP_PDF" && -f "$TMP_PDF" ]] && rm -f "$TMP_PDF" || true
+  unset PAPERCUT_USER_JWT PAPERCUT_ID_TOKEN AUTH_MODE AUTH_TOKEN user_token_file default_token_file
 }
 trap cleanup EXIT
 
@@ -229,18 +316,21 @@ if [[ "$PAPERCUT_DRY_RUN" == "1" ]]; then
 fi
 
 if [[ -n "$PAPERCUT_USER_JWT" ]]; then
-  cmd+=(--user-jwt "$PAPERCUT_USER_JWT")
+  AUTH_MODE="--user-jwt-stdin"
+  AUTH_TOKEN="$PAPERCUT_USER_JWT"
 elif [[ -n "$PAPERCUT_ID_TOKEN" ]]; then
-  cmd+=(--id-token "$PAPERCUT_ID_TOKEN")
+  AUTH_MODE="--id-token-stdin"
+  AUTH_TOKEN="$PAPERCUT_ID_TOKEN"
 else
   echo "[$BACKEND_NAME] missing token for user '$CUPS_USER' (no jwt/id-token configured)" >&2
   record_alert "missing-token"
   exit 1
 fi
+cmd+=("$AUTH_MODE")
 
 # Send backend output to CUPS error_log via stderr for troubleshooting.
 export PAPERCUT_STATE_DIR
-if "${cmd[@]}" 1>&2; then
+if printf '%s\n' "$AUTH_TOKEN" | "${cmd[@]}" 1>&2; then
   :
 else
   rc=$?

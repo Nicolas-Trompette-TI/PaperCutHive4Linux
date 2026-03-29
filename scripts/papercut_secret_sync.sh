@@ -60,9 +60,10 @@ fi
 
 token_state() {
   local tok="${1:-}"
-  python3 - <<'PY' "$tok"
-import sys, base64, json, time
-tok = (sys.argv[1] or "").strip()
+  python3 - 3<<<"$tok" <<'PY'
+import os, sys, base64, json, time
+with os.fdopen(3, "r", encoding="utf-8", errors="replace") as stream:
+    tok = (stream.read() or "").strip()
 if not tok:
     print("MISSING")
     raise SystemExit(0)
@@ -132,8 +133,13 @@ if [[ $VERBOSE -eq 1 ]]; then
   echo "Found JWT in keyring (len=${#TOKEN}) for $LINUX_USER."
 fi
 
-printf '%s\n' "$TOKEN" | sudo /usr/local/sbin/papercut-hive-token-sync --linux-user "$LINUX_USER" --stdin >/dev/null
+if ! printf '%s\n' "$TOKEN" | sudo -n /usr/local/sbin/papercut-hive-token-sync --linux-user "$LINUX_USER" --stdin >/dev/null; then
+  echo "Token sync failed: non-interactive sudo permission denied for papercut-hive-token-sync." >&2
+  echo "Open a new login session so 'papercut-hive-users' group is active, then retry finalize-session." >&2
+  exit 1
+fi
 unset TOKEN
+unset STATE
 
 if [[ $VERBOSE -eq 1 ]]; then
   echo "Token sync complete."

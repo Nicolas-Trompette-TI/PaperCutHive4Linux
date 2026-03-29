@@ -37,10 +37,20 @@ if [[ -z "$JOB_ID" ]]; then
   exit 1
 fi
 
-sleep 2
-if ! lpstat -W completed -o "$PRINTER_NAME" | grep -q "^${JOB_ID}[[:space:]]"; then
-  echo "Job not yet completed in CUPS history: $JOB_ID" >&2
-  exit 1
-fi
+attempt=0
+max_attempts=30
+while (( attempt < max_attempts )); do
+  if lpstat -W completed -o "$PRINTER_NAME" | grep -q "^${JOB_ID}[[:space:]]"; then
+    echo "Verification OK: $JOB_ID"
+    exit 0
+  fi
+  sleep 1
+  attempt=$((attempt + 1))
+done
 
-echo "Verification OK: $JOB_ID"
+echo "Job not yet completed in CUPS history: $JOB_ID" >&2
+echo "Queue status: $(lpstat -p "$PRINTER_NAME" -l 2>/dev/null | tr '\n' ' ')" >&2
+if lpstat -W not-completed -o "$PRINTER_NAME" 2>/dev/null | grep -q "^${JOB_ID}[[:space:]]"; then
+  echo "Job is still in not-completed set: $JOB_ID" >&2
+fi
+exit 1

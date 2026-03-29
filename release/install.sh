@@ -95,6 +95,7 @@ cat <<EOF
 Release install wrapper complete.
 
 If keyring bootstrap was skipped or failed in a non-graphical shell, open your
-normal desktop session and run:
-  $BASE/release/finalize-session.sh --org-id "$ORG_ID" --cloud-host "$CLOUD_HOST" --linux-user "$LINUX_USER"
+normal desktop session and run one of:
+  $BASE/release/finalize-session.sh --cloud-host "$CLOUD_HOST" --linux-user "$LINUX_USER"
+  $BASE/release/finalize-session.sh --org-id "$ORG_ID" --cloud-host "$CLOUD_HOST" --linux-user "$LINUX_USER" --no-bootstrap-from-extension
 EOF
